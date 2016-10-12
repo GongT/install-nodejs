@@ -48,8 +48,7 @@ fi
 
 
 if [ -e /usr/bin/which ]; then
-	NODE=$(which node)
-	if [ -z "${NODE}" ]; then
+	if ! which node; then
 		echo "you must add /usr/local/bin to your \$PATH"
 	fi
 else
