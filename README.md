@@ -1,2 +1,7 @@
-# install-nodejs
-install newest version of nodejs with one command
+# install node.js
+
+
+```bash
+curl https://raw.githubusercontent.com/GongT/install-nodejs/master/install.sh | bash
+
+```
