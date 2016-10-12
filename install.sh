@@ -20,6 +20,8 @@ if [ ! -f nodejs.tar.xz ]; then
 	wget --continue -O nodejs.tar.xz https://nodejs.org/dist/latest/${NODE_PACKAGE}
 fi
 
+unlink latest-nodejs.txt
+
 if [ -e "nodejs-install-temp-dir" ]; then
 	rm -rf nodejs-install-temp-dir
 fi
