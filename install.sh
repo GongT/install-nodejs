@@ -72,6 +72,7 @@ tar xf nodejs.tar.xz -C nodejs-install-temp-dir || unlink nodejs.tar.xz
 cd nodejs-install-temp-dir/*
 
 echo "	copy nodejs to /usr/local ..."
+rm -f /usr/local/bin/node
 cp -r */ /usr/local
 echo "complete."
 
