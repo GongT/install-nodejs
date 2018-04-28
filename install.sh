@@ -67,7 +67,7 @@ fi
 mkdir nodejs-install-temp-dir
 
 echo "	extracting file: nodejs.tar.xz"
-tar xf nodejs.tar.xz -C nodejs-install-temp-dir || unlink nodejs.tar.xz
+tar xf nodejs.tar.xz -C nodejs-install-temp-dir && unlink nodejs.tar.xz
 
 cd nodejs-install-temp-dir/*
 
