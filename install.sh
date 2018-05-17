@@ -114,7 +114,7 @@ if [ "${OLD_EXISTS}" ]; then
 	PREFIX=$(/usr/nodejs/bin/npm config --global get prefix)
 	cd "${PREFIX}/lib/node_modules"
 	
-	npm install || die "nodejs install success. But can not rebuild some global packages. This may or may not cause error."
+	install || die "nodejs install success. But can not rebuild some global packages. This may or may not cause error."
 fi
 
 echo "nodejs install success."
