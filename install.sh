@@ -6,7 +6,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 OLD_EXISTS="0"
-if [ -e /usr/local/bin/node ]; then
+if [ -e /usr/nodejs/bin/node ]; then
 	echo "old nodejs exists."
 	OLD_EXISTS="1"
 fi
@@ -47,10 +47,10 @@ NODE_PACKAGE=$(grep -Eo "href=\"node-v[0-9.]+-${PACKAGE_TAG}-x64.tar.xz\"" lates
 echo "  package name: ${NODE_PACKAGE}"
 
 if [ ${OLD_EXISTS} -eq 1 ]; then
-	if echo "${NODE_PACKAGE}" | grep -q "$(/usr/local/bin/node -v)"; then
+	if echo "${NODE_PACKAGE}" | grep -q "$(/usr/nodejs/bin/node -v)"; then
 		unlink latest-nodejs.txt
 		echo "official node.js not updated:"
-		echo "  current version: $(/usr/local/bin/node -v)"
+		echo "  current version: $(/usr/nodejs/bin/node -v)"
 		exit 0
 	fi
 fi
@@ -71,9 +71,9 @@ tar xf nodejs.tar.xz -C nodejs-install-temp-dir && unlink nodejs.tar.xz
 
 cd nodejs-install-temp-dir/*
 
-echo "	copy nodejs to /usr/local ..."
-rm -f /usr/local/bin/node
-cp -r */ /usr/local
+echo "	copy nodejs to /usr/nodejs ..."
+rm -f /usr/nodejs/bin/node
+cp -r . /usr/nodejs
 echo "complete."
 
 cd /tmp
@@ -82,11 +82,11 @@ rm -rf nodejs-install-temp-dir
 
 echo ""
 
-if [ -e /usr/local/bin/node ]; then
+if [ -e /usr/nodejs/bin/node ]; then
 	echo -n "  node.js: "
-	/usr/local/bin/node -v
+	/usr/nodejs/bin/node -v
 else
-	echo "error... something wrong... no /usr/local/bin/node after extract."
+	echo "error... something wrong... no /usr/nodejs/bin/node after extract."
 	exit 1
 fi
 
@@ -111,14 +111,15 @@ function install {
 	npm rebuild "${ITEMS[@]}"
 }
 if [ "${OLD_EXISTS}" ]; then
-	PREFIX=$(/usr/local/bin/npm config --global get prefix)
+	PREFIX=$(/usr/nodejs/bin/npm config --global get prefix)
 	cd "${PREFIX}/lib/node_modules"
 	
-	install || die "nodejs install success. But can not rebuild some global packages. This may or may not cause error."
+	npm install || die "nodejs install success. But can not rebuild some global packages. This may or may not cause error."
 fi
 
 echo "nodejs install success."
 
 if ! command -v node &>/dev/null; then
-	echo "you must add /usr/local/bin to your \$PATH"
+	echo 'export PATH="$PATH:/usr/nodejs/bin"' > /etc/profile.d/nodejs.sh
+	echo 'you must add /usr/nodejs/bin to your $PATH'
 fi
