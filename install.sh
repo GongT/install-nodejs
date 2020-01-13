@@ -51,7 +51,7 @@ if [ ${OLD_EXISTS} -eq 1 ]; then
 		unlink latest-nodejs.txt
 		echo "official node.js not updated:"
 		echo "  current version: $(/usr/nodejs/bin/node -v)"
-		# exit 0
+		exit 0
 	fi
 fi
 
