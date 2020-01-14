@@ -97,6 +97,7 @@ do_system_check
 PREFIX=/usr/nodejs
 BIN=${PREFIX}/bin/node
 NPM=${PREFIX}/bin/npm
+YARN=$PREFIX/yarn/bin/yarn
 TMP_VERSION="$TMP/latest-nodejs.txt"
 
 OLD_EXISTS="0"
@@ -173,7 +174,7 @@ msg "Installing yarn package manager..."
 rm -rf "$PREFIX/yarn"
 mkdir -p "$PREFIX/yarn"
 tar -zxf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
-    V=$("$PREFIX/yarn/bin/yarn" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
+    V=$("$YARN" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
 msg "  * yarn: $V"
 
 mkdir -p "$PREFIX/etc" || true
@@ -185,17 +186,17 @@ replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix = \"$PREFIX\""
 
 if ! command_exists unpm ; then
     msg "Installing unpm package manager..."
-    yarn global add --silent --progress @idlebox/package-manager || msg "Failed to install @idlebox/package-manager. that is not fatal."
+    $YARN global add @idlebox/package-manager --silent --progress || msg "Failed to install @idlebox/package-manager. that is not fatal."
     msg " -> ok."
 fi
 if ! command_exists pnpm ; then
     msg "Installing pnpm package manager..."
-    yarn global add --silent --progress pnpm || msg "Failed to install pnpm. that is not fatal."
+    $YARN global add pnpm --silent --progress || msg "Failed to install pnpm. that is not fatal."
     msg " -> ok."
 fi
 if ! command_exists npm ; then
     msg "Installing npm package manager..."
-    yarn global add --silent --progress npm || msg "Failed to install npm. that is not fatal."
+    $YARN global add npm --silent --progress || msg "Failed to install npm. that is not fatal."
     msg " -> ok."
 fi
 
