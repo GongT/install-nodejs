@@ -155,6 +155,7 @@ msg "     -> ok."
 if [[ -e $BIN ]]; then
     V=$($BIN -v 2>&1) || die "emmmmmm... binary file '$BIN' is not executable. that's weird."
     msg "  * node.js: $V"
+    msg "  * npm: $($NPM -v ||true)"
 else
     die "error... something wrong... no '$BIN' after extract."
 fi
@@ -190,6 +191,11 @@ fi
 if ! command_exists pnpm ; then
     msg "Installing pnpm package manager..."
     yarn global add --silent --progress pnpm || msg "Failed to install pnpm. that is not fatal."
+    msg " -> ok."
+fi
+if ! command_exists npm ; then
+    msg "Installing npm package manager..."
+    yarn global add --silent --progress npm || msg "Failed to install npm. that is not fatal."
     msg " -> ok."
 fi
 
