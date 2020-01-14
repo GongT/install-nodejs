@@ -1,151 +1,202 @@
 #!/bin/bash
 
-if [ "$(id -u)" -ne 0 ]; then
-	echo "not privileged user."
-	exec sudo bash
+set -Eeuo pipefail
+
+function msg() {
+    echo "$@" >&2
+}
+function die() {
+    msg "$@"
+    exit 1
+}
+UNAME=$(uname -a) || die "uname -a failed."
+function check_system() {
+    echo "$UNAME" | grep -iq "${1}" 2>/dev/null
+}
+function command_exists() {
+    command -v "$1" &>/dev/null
+}
+function do_system_check() {
+    command_exists wget || die "command 'wget' not found, please install it"
+    command_exists dirname || die "command 'dirname' not found, please install coreutils"
+    command_exists tar || die "command 'tar' not found, please install it"
+    command_exists gzip || die "command 'gzip' not found, please install it"
+}
+function download_file() {
+    local url="$1"
+    local temp="$TMP/$(basename "${url}")"
+    
+    msg "Download file from $url:"
+    if [[ -e "$temp" ]] ; then
+        msg "    use cached file."
+    else
+        wget "$url" -O "${temp}.downloading" \
+        	--continue --show-progress --progress=bar:force:noscroll || die "Cannot download."
+        mv "${temp}.downloading" "${temp}"
+        msg "    saved at ${temp}"
+    fi
+    echo "$temp"
+}
+function replace_line() {
+	local FILE="$1" KEY="$2" RESULT="$3"
+	local OLD=$(< "$FILE")
+	local MID=$(echo "$OLD" | sed -E "s#^$KEY\b.+\$#__REPLACE_LINE__#g")
+	if [[ "$MID" == "$OLD" ]] ; then
+		local NEW="$OLD
+$RESULT
+"
+	else
+		local NEW=${MID/__REPLACE_LINE__/"$RESULT"}
+	fi
+
+	if [[ "$OLD" != "$NEW" ]] ; then
+		msg -e "modify file '$FILE'\n    \e[2m$RESULT\e[0m"
+		echo "$NEW" > "$FILE"
+	fi
+}
+function rebuild_global_packages() {
+    local ITEMS=()
+    local i
+    local j
+    cd "$1"
+    for i in */ ; do
+        i=${i%/}
+        if echo "$i" | grep -qE '^@' &>/dev/null ; then
+            for j in "$i"/*/ ; do
+                j=${j%/}
+                if [ ! -L "$j" ]; then
+                    ITEMS+=("$j")
+                fi
+            done
+            elif [ ! -L "$i" ]; then
+            ITEMS+=("$i")
+        fi
+    done
+    
+    $NPM rebuild "${ITEMS[@]}" || {
+        msg -e "\e[38;5;11mGlobal packages not rebuilt. This may or may not cause error.\e[0m"
+        msg "    the command is: $NPM rebuild ${ITEMS[*]}"
+    }
+}
+
+if command_exists id && [[ "$(id -u)" -ne 0 ]]; then
+    msg "not privileged user."
+    if command_exists sudo ; then
+        msg "re-invoke with sudo... (will fail if password is required from commandline)"
+        exec sudo bash
+    fi
 fi
+
+TMP="${TMPDIR-"/tmp"}"
+msg "system temp dir is $TMP"
+cd "$TMP"
+{ touch .test && unlink .test ; } || die "System temp direcotry '$TMP' is not writable."
+
+do_system_check
+
+PREFIX=/usr/nodejs
+BIN=${PREFIX}/bin/node
+NPM=${PREFIX}/bin/npm
+TMP_VERSION="$TMP/latest-nodejs.txt"
 
 OLD_EXISTS="0"
-if [ -e /usr/nodejs/bin/node ]; then
-	echo "old nodejs exists."
-	OLD_EXISTS="1"
+if [[ -e "$BIN" ]]; then
+    msg "old nodejs exists."
+    OLD_EXISTS="1"
 fi
 
-function die {
-	echo "$@" >&2
-	exit 1
-}
-set -e
-cd /tmp
+if command_exists node && [[ "$(command -v node)" != "$BIN" ]] ; then
+    msg -e "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
+    msg "    this will cause error!"
+fi
 
-if [ ! -f latest-nodejs.txt ]; then
-	echo "fetch current version: "
-	curl -s https://nodejs.org/dist/latest/ > latest-nodejs.txt || die "can not get https://nodejs.org/dist/latest/"
-	echo "  ok."
+if [ ! -f "$TMP_VERSION" ]; then
+    msg "fetch current version: "
+    wget --quiet https://nodejs.org/dist/latest/ -O "$TMP_VERSION" --quiet || die "can not get https://nodejs.org/dist/latest/"
+    msg " -> ok."
 else
-	echo "  latest-nodejs.txt exists"
+    msg " -> $(basename "$TMP_VERSION") exists"
 fi
-
-UNAME="$(uname -a)"
-function check_system {
-	echo "${UNAME}" | grep -iq "${1}" 2>/dev/null
-}
 
 if check_system darwin ; then
-	PACKAGE_TAG="darwin"
-elif check_system cygwin ; then
-	PACKAGE_TAG="win"
-elif check_system linux ; then
-	PACKAGE_TAG="linux"
+    PACKAGE_TAG="darwin"
+    elif check_system cygwin ; then
+    PACKAGE_TAG="win"
+    elif check_system linux ; then
+    PACKAGE_TAG="linux"
 else
-	echo "only support: Darwin(Mac OS), Cygwin, Linux (RHEL & WSL)" >&2
-	exit 1
+    die "only support: Darwin(Mac OS), Cygwin, Linux (RHEL & WSL)"
 fi
-echo "system name: ${PACKAGE_TAG}"
+msg " * system name: ${PACKAGE_TAG}"
 
-NODE_PACKAGE=$(grep -Eo "href=\"node-v[0-9.]+-${PACKAGE_TAG}-x64.tar.xz\"" latest-nodejs.txt | sed 's/^href="//; s/"$//')
-echo "  package name: ${NODE_PACKAGE}"
+NODE_PACKAGE=$(grep -Eo 'href="node-v[0-9.]+-'${PACKAGE_TAG}'-x64.tar.xz"' "$TMP_VERSION" | sed 's/^href="//; s/"$//') \
+	|| die "failed to detect nodejs version from downloaded html. (file has saved at '$TMP_VERSION')"
+msg " * package name: ${NODE_PACKAGE}"
 
-if [ ${OLD_EXISTS} -eq 1 ]; then
-	if echo "${NODE_PACKAGE}" | grep -q "$(/usr/nodejs/bin/node -v)"; then
-		unlink latest-nodejs.txt
-		echo "official node.js not updated:"
-		echo "  current version: $(/usr/nodejs/bin/node -v)"
-		exit 0
-	fi
+if [[ ${OLD_EXISTS} -eq 1 ]]; then
+    if echo "${NODE_PACKAGE}" | grep -q "$($BIN -v)"; then
+        unlink "$TMP_VERSION" || true
+        msg "official node.js not updated:"
+        msg "    current version: $($BIN -v)"
+        exit 0
+    fi
 fi
 
-echo "installing..."
-echo "	downloading file: https://nodejs.org/dist/latest/${NODE_PACKAGE}"
-wget --continue https://nodejs.org/dist/latest/${NODE_PACKAGE} --progress=bar:force -O nodejs.tar.xz
+msg "Installing NodeJS..."
+NODEJS_ZIP_FILE=$(download_file "https://nodejs.org/dist/latest/${NODE_PACKAGE}")
+YARN_ZIP_FILE=$(download_file "https://yarnpkg.com/latest-rc.tar.gz")
 
-unlink latest-nodejs.txt || true
+mkdir -p "$PREFIX" || die "Can not create directory at '$PREFIX'"
 
-if [ -e "nodejs-install-temp-dir" ]; then
-	rm -rf nodejs-install-temp-dir
-fi
-mkdir nodejs-install-temp-dir
+msg "    extracting file:"
+tar xf "$NODEJS_ZIP_FILE" --strip-components=1 -C "$PREFIX" || die "     -> \e[38;5;9mfailed\e[0m."
+msg "     -> ok."
 
-echo "	extracting file: nodejs.tar.xz"
-tar xf nodejs.tar.xz -C nodejs-install-temp-dir && unlink nodejs.tar.xz
-
-cd nodejs-install-temp-dir/*
-
-echo "	copy nodejs to /usr/nodejs ..."
-rm -f /usr/nodejs/bin/node
-cp -r . /usr/nodejs
-echo "complete."
-
-cd /tmp
-
-rm -rf nodejs-install-temp-dir
-
-echo ""
-
-if [ -e /usr/nodejs/bin/node ]; then
-	echo -n "  node.js: "
-	/usr/nodejs/bin/node -v
+if [[ -e $BIN ]]; then
+    V=$($BIN -v 2>&1) || die "emmmmmm... binary file '$BIN' is not executable. that's weird."
+    msg "  * node.js: $V"
 else
-	echo "error... something wrong... no /usr/nodejs/bin/node after extract."
-	exit 1
+    die "error... something wrong... no '$BIN' after extract."
 fi
 
-echo 'export PATH="$PATH:/usr/nodejs/bin:/usr/nodejs/yarn/bin:./node_modules/.bin"' > /etc/profile.d/nodejs.sh
+echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'" > /etc/profile.d/nodejs.sh
+echo '
+if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
+	export PATH="$PATH:$_NODE_JS_INSTALL_PREFIX/bin:$_NODE_JS_INSTALL_PREFIX/yarn/bin:./node_modules/.bin"
+fi
+unset _NODE_JS_INSTALL_PREFIX
+' >> /etc/profile.d/nodejs.sh
 source /etc/profile.d/nodejs.sh
 
-function install {
-	local ITEMS=()
-	local i
-	local j
-	for i in */ ; do
-		i=${i%/}
-		if echo "$i" | grep -qE '^@' &>/dev/null ; then
-			for j in "$i"/*/ ; do
-				j=${j%/}
-				if [ ! -L "$j" ]; then
-					ITEMS+=("$j")
-				fi
-			done
-		elif [ ! -L "$i" ]; then
-			ITEMS+=("$i")
-		fi
-	done
-	
-	/usr/nodejs/bin/npm rebuild "${ITEMS[@]}"
-}
+msg "Installing yarn package manager..."
+rm -rf "$PREFIX/yarn"
+mkdir -p "$PREFIX/yarn"
+tar -zxf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
+    V=$("$PREFIX/yarn/bin/yarn" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
+msg "  * yarn: $V"
+
+mkdir -p "$PREFIX/etc" || true
+[[ -e "$PREFIX/etc/yarnrc" ]] || touch "$PREFIX/etc/yarnrc" || true
+[[ -e "$PREFIX/etc/npmrc" ]] || touch "$PREFIX/etc/npmrc" || true
+
+replace_line "$PREFIX/etc/yarnrc" 'global-folder' "global-folder \"/usr/nodejs/lib\""
+replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix = \"$PREFIX\""
+
+if ! command_exists unpm ; then
+    msg "Installing unpm package manager..."
+    yarn global add --silent --progress @idlebox/package-manager || msg "Failed to install @idlebox/package-manager. that is not fatal."
+    msg " -> ok."
+fi
+if ! command_exists pnpm ; then
+    msg "Installing pnpm package manager..."
+    yarn global add --silent --progress pnpm || msg "Failed to install pnpm. that is not fatal."
+    msg " -> ok."
+fi
+
 if [ "${OLD_EXISTS}" ]; then
-	echo "rebuild global node_modules folder..."
-	PREFIX=$(/usr/nodejs/bin/npm config --global get prefix)
-	cd "${PREFIX}/lib/node_modules"
-	
-	install || die "nodejs install success. But can not rebuild some global packages. This may or may not cause error."
+    msg "rebuild global node_modules folder..."
+    CONFIG_PREFIX=$(/usr/nodejs/bin/npm config --global get prefix)
+    rebuild_global_packages "$CONFIG_PREFIX"
 fi
-
-wget https://yarnpkg.com/latest-rc.tar.gz -O /tmp/install-yarn.tar.gz --progress=bar:force --continue
-rm -rf /usr/nodejs/yarn
-mkdir -p /usr/nodejs/yarn
-tar -zvxf /tmp/install-yarn.tar.gz -C /usr/nodejs/yarn --strip-components=1
-
-echo -n "  yarn: "
-/usr/nodejs/yarn/bin/yarn -v
-
-mkdir -p /usr/nodejs/etc || true
-[[ -e /usr/nodejs/etc/yarnrc ]] || touch /usr/nodejs/etc/yarnrc || true
-[[ -e /usr/nodejs/etc/npmrc ]] || touch /usr/nodejs/etc/npmrc || true
-
-if ! grep 'global-folder' /usr/nodejs/etc/yarnrc -q ; then
-	echo '' >> /usr/nodejs/etc/yarnrc
-	echo 'global-folder "/usr/nodejs/lib"' >> /usr/nodejs/etc/yarnrc
-fi
-
-if command -v unpm &>/dev/null ; then
-	echo "Installing package manager: unpm"
-	yarn global add @idlebox/package-manager || echo "Failed to install @idlebox/package-manager. that is not fatal."
-fi
-if command -v pnpm &>/dev/null ; then
-	echo "Installing package manager: pnpm"
-	yarn global add pnpm || echo "Failed to install pnpm. that is not fatal."
-fi
-
-echo "nodejs install success."
-echo 'You should run "source /etc/profile.d/nodejs.sh" or restart current session to take effect.'
+msg "nodejs install success."
+msg 'You should run "source /etc/profile.d/nodejs.sh" or restart current session to take effect.'
