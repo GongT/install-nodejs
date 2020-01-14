@@ -173,7 +173,7 @@ source /etc/profile.d/nodejs.sh
 msg "Installing yarn package manager..."
 rm -rf "$PREFIX/yarn"
 mkdir -p "$PREFIX/yarn"
-tar -zxf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
+tar xf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
     V=$("$YARN" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
 msg "  * yarn: $V"
 
