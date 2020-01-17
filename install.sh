@@ -164,7 +164,7 @@ fi
 echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'" > /etc/profile.d/nodejs.sh
 echo '
 if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
-	export PATH="$PATH:$_NODE_JS_INSTALL_PREFIX/bin:$_NODE_JS_INSTALL_PREFIX/yarn/bin:./node_modules/.bin"
+	export PATH="$PATH:./node_modules/.bin:$_NODE_JS_INSTALL_PREFIX/yarn/bin:$_NODE_JS_INSTALL_PREFIX/bin"
 fi
 unset _NODE_JS_INSTALL_PREFIX
 ' >> /etc/profile.d/nodejs.sh
