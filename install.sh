@@ -22,20 +22,26 @@ function do_system_check() {
     command_exists tar || die "command 'tar' not found, please install it"
     command_exists gzip || die "command 'gzip' not found, please install it"
 }
+function _wget() {
+	wget --quiet --show-progress --progress=bar:force:noscroll "$@"
+}
 function download_file() {
     local url="$1"
     local temp="$TMP/$(basename "${url}")"
+	local save_at=${2-"$temp"}
     
     msg "Download file from $url:"
-    if [[ -e "$temp" ]] ; then
+	msg "    to: $save_at"
+    if [[ -e "$save_at" ]] ; then
         msg "    use cached file."
     else
-        wget "$url" -O "${temp}.downloading" \
-        	--continue --show-progress --progress=bar:force:noscroll || die "Cannot download."
-        mv "${temp}.downloading" "${temp}"
-        msg "    saved at ${temp}"
+        _wget "$url" -O "${save_at}.downloading" --continue || die "Cannot download."
+        mv "${save_at}.downloading" "${save_at}"
+        msg "    saved at ${save_at}"
     fi
-    echo "$temp"
+	if [[ -z "${2-""}" ]]; then
+	    echo "$save_at"
+	fi
 }
 function replace_line() {
 	local FILE="$1" KEY="$2" RESULT="$3"
@@ -95,10 +101,15 @@ cd "$TMP"
 do_system_check
 
 PREFIX=/usr/nodejs
+mkdir -p "$PREFIX" || die "Can not create directory at '$PREFIX'"
+
 BIN=${PREFIX}/bin/node
 NPM=${PREFIX}/bin/npm
 YARN=$PREFIX/yarn/bin/yarn
-TMP_VERSION="$TMP/latest-nodejs.txt"
+
+INSTALL_VERSION="${1-latest}"
+TMP_VERSION="$TMP/nodejs-version-$INSTALL_VERSION.txt"
+TMP_INDEX="$TMP/nodejs-versions-list.txt"
 
 OLD_EXISTS="0"
 if [[ -e "$BIN" ]]; then
@@ -111,13 +122,21 @@ if command_exists node && [[ "$(command -v node)" != "$BIN" ]] ; then
     msg "    this will cause error!"
 fi
 
-if [ ! -f "$TMP_VERSION" ]; then
-    msg "fetch current version: "
-    wget --quiet https://nodejs.org/dist/latest/ -O "$TMP_VERSION" --quiet || die "can not get https://nodejs.org/dist/latest/"
-    msg " -> ok."
+msg "fetch version '$INSTALL_VERSION': "
+if [[ "$INSTALL_VERSION" == "latest" ]]; then
+	download_file "https://nodejs.org/dist/latest/" "${TMP_VERSION}"
+elif [[ "$INSTALL_VERSION" -gt 0 ]]; then
+	download_file "https://nodejs.org/dist/" "${TMP_INDEX}"
+	
+	LATEST_SUB_VERSION=$(grep -Eo ">v${INSTALL_VERSION}\.[0-9]+\.[0-9]+/<" "${TMP_INDEX}" | grep -Eo "v${INSTALL_VERSION}\.[0-9]+\.[0-9]+" | sort --version-sort | tail -n1 ) \
+		|| die "not found version $INSTALL_VERSION. (file has saved at '$TMP_INDEX')"
+	msg "latest version of v$INSTALL_VERSION is $LATEST_SUB_VERSION"
+	download_file "https://nodejs.org/dist/$LATEST_SUB_VERSION/" "${TMP_VERSION}"
+	INSTALL_VERSION="$LATEST_SUB_VERSION"
 else
-    msg " -> $(basename "$TMP_VERSION") exists"
+	die "requested install version ($INSTALL_VERSION) is not valid."
 fi
+msg " -> ok."
 
 if check_system darwin ; then
     PACKAGE_TAG="darwin"
@@ -144,10 +163,8 @@ if [[ ${OLD_EXISTS} -eq 1 ]]; then
 fi
 
 msg "Installing NodeJS..."
-NODEJS_ZIP_FILE=$(download_file "https://nodejs.org/dist/latest/${NODE_PACKAGE}")
+NODEJS_ZIP_FILE=$(download_file "https://nodejs.org/dist/$INSTALL_VERSION/${NODE_PACKAGE}")
 YARN_ZIP_FILE=$(download_file "https://yarnpkg.com/latest-rc.tar.gz")
-
-mkdir -p "$PREFIX" || die "Can not create directory at '$PREFIX'"
 
 msg "    extracting file:"
 tar xf "$NODEJS_ZIP_FILE" --strip-components=1 -C "$PREFIX" || die "     -> \e[38;5;9mfailed\e[0m."
