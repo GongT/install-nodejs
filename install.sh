@@ -3,44 +3,44 @@
 set -Eeuo pipefail
 
 function msg() {
-    echo "$@" >&2
+	echo "$@" >&2
 }
 function die() {
-    msg "$@"
-    exit 1
+	msg "$@"
+	exit 1
 }
 UNAME=$(uname -a) || die "uname -a failed."
 function check_system() {
-    echo "$UNAME" | grep -iq "${1}" 2>/dev/null
+	echo "$UNAME" | grep -iq "${1}" 2>/dev/null
 }
 function command_exists() {
-    command -v "$1" &>/dev/null
+	command -v "$1" &>/dev/null
 }
 function do_system_check() {
-    command_exists wget || die "command 'wget' not found, please install it"
-    command_exists dirname || die "command 'dirname' not found, please install coreutils"
-    command_exists tar || die "command 'tar' not found, please install it"
-    command_exists gzip || die "command 'gzip' not found, please install it"
+	command_exists wget || die "command 'wget' not found, please install it"
+	command_exists dirname || die "command 'dirname' not found, please install coreutils"
+	command_exists tar || die "command 'tar' not found, please install it"
+	command_exists gzip || die "command 'gzip' not found, please install it"
 }
 function _wget() {
 	wget --quiet --show-progress --progress=bar:force:noscroll "$@"
 }
 function download_file() {
-    local url="$1"
-    local temp="$TMP/$(basename "${url}")"
+	local url="$1"
+	local temp="$TMP/$(basename "${url}")"
 	local save_at=${2-"$temp"}
-    
-    msg "Download file from $url:"
+	
+	msg "Download file from $url:"
 	msg "    to: $save_at"
-    if [[ -e "$save_at" ]] ; then
-        msg "    use cached file."
-    else
-        _wget "$url" -O "${save_at}.downloading" --continue || die "Cannot download."
-        mv "${save_at}.downloading" "${save_at}"
-        msg "    saved at ${save_at}"
-    fi
+	if [[ -e "$save_at" ]] ; then
+		msg "    use cached file."
+	else
+		_wget "$url" -O "${save_at}.downloading" --continue || die "Cannot download."
+		mv "${save_at}.downloading" "${save_at}"
+		msg "    saved at ${save_at}"
+	fi
 	if [[ -z "${2-""}" ]]; then
-	    echo "$save_at"
+		echo "$save_at"
 	fi
 }
 function replace_line() {
@@ -61,36 +61,36 @@ $RESULT
 	fi
 }
 function rebuild_global_packages() {
-    local ITEMS=()
-    local i
-    local j
-    cd "$1"
-    for i in */ ; do
-        i=${i%/}
-        if echo "$i" | grep -qE '^@' &>/dev/null ; then
-            for j in "$i"/*/ ; do
-                j=${j%/}
-                if [ ! -L "$j" ]; then
-                    ITEMS+=("$j")
-                fi
-            done
-            elif [ ! -L "$i" ]; then
-            ITEMS+=("$i")
-        fi
-    done
-    
-    $NPM rebuild "${ITEMS[@]}" || {
-        msg -e "\e[38;5;11mGlobal packages not rebuilt. This may or may not cause error.\e[0m"
-        msg "    the command is: $NPM rebuild ${ITEMS[*]}"
-    }
+	local ITEMS=()
+	local i
+	local j
+	cd "$1"
+	for i in */ ; do
+		i=${i%/}
+		if echo "$i" | grep -qE '^@' &>/dev/null ; then
+			for j in "$i"/*/ ; do
+				j=${j%/}
+				if [ ! -L "$j" ]; then
+					ITEMS+=("$j")
+				fi
+			done
+			elif [ ! -L "$i" ]; then
+			ITEMS+=("$i")
+		fi
+	done
+	
+	$NPM rebuild "${ITEMS[@]}" || {
+		msg -e "\e[38;5;11mGlobal packages not rebuilt. This may or may not cause error.\e[0m"
+		msg "    the command is: $NPM rebuild ${ITEMS[*]}"
+	}
 }
 
 if command_exists id && [[ "$(id -u)" -ne 0 ]]; then
-    msg "not privileged user."
-    if command_exists sudo ; then
-        msg "re-invoke with sudo... (will fail if password is required from commandline)"
-        exec sudo bash
-    fi
+	msg "not privileged user."
+	if command_exists sudo ; then
+		msg "re-invoke with sudo... (will fail if password is required from commandline)"
+		exec sudo bash
+	fi
 fi
 
 TMP="${TMPDIR-"/tmp"}"
@@ -113,13 +113,13 @@ TMP_INDEX="$TMP/nodejs-versions-list.txt"
 
 OLD_EXISTS="0"
 if [[ -e "$BIN" ]]; then
-    msg "old nodejs exists."
-    OLD_EXISTS="1"
+	msg "old nodejs exists."
+	OLD_EXISTS="1"
 fi
 
 if command_exists node && [[ "$(command -v node)" != "$BIN" ]] ; then
-    msg -e "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
-    msg "    this will cause error!"
+	msg -e "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
+	msg "    this will cause error!"
 fi
 
 msg "fetch version '$INSTALL_VERSION': "
@@ -139,13 +139,13 @@ fi
 msg " -> ok."
 
 if check_system darwin ; then
-    PACKAGE_TAG="darwin"
-    elif check_system cygwin ; then
-    PACKAGE_TAG="win"
-    elif check_system linux ; then
-    PACKAGE_TAG="linux"
+	PACKAGE_TAG="darwin"
+	elif check_system cygwin ; then
+	PACKAGE_TAG="win"
+	elif check_system linux ; then
+	PACKAGE_TAG="linux"
 else
-    die "only support: Darwin(Mac OS), Cygwin, Linux (RHEL & WSL)"
+	die "only support: Darwin(Mac OS), Cygwin, Linux (RHEL & WSL)"
 fi
 msg " * system name: ${PACKAGE_TAG}"
 
@@ -154,12 +154,12 @@ NODE_PACKAGE=$(grep -Eo 'href="node-v[0-9.]+-'${PACKAGE_TAG}'-x64.tar.xz"' "$TMP
 msg " * package name: ${NODE_PACKAGE}"
 
 if [[ ${OLD_EXISTS} -eq 1 ]]; then
-    if echo "${NODE_PACKAGE}" | grep -q "$($BIN -v)"; then
-        unlink "$TMP_VERSION" || true
-        msg "official node.js not updated:"
-        msg "    current version: $($BIN -v)"
-        exit 0
-    fi
+	if echo "${NODE_PACKAGE}" | grep -q "$($BIN -v)"; then
+		unlink "$TMP_VERSION" || true
+		msg "official node.js not updated:"
+		msg "    current version: $($BIN -v)"
+		exit 0
+	fi
 fi
 
 msg "Installing NodeJS..."
@@ -171,13 +171,14 @@ tar xf "$NODEJS_ZIP_FILE" --strip-components=1 -C "$PREFIX" || die "     -> \e[3
 msg "     -> ok."
 
 if [[ -e $BIN ]]; then
-    V=$($BIN -v 2>&1) || die "emmmmmm... binary file '$BIN' is not executable. that's weird."
-    msg "  * node.js: $V"
-    msg "  * npm: $($NPM -v ||true)"
+	V=$($BIN -v 2>&1) || die "emmmmmm... binary file '$BIN' is not executable. that's weird."
+	msg "  * node.js: $V"
+	msg "  * npm: $($NPM -v ||true)"
 else
-    die "error... something wrong... no '$BIN' after extract."
+	die "error... something wrong... no '$BIN' after extract."
 fi
 
+msg "Creating profile..."
 echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'" > /etc/profile.d/nodejs.sh
 echo '
 if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
@@ -187,13 +188,6 @@ unset _NODE_JS_INSTALL_PREFIX
 ' >> /etc/profile.d/nodejs.sh
 source /etc/profile.d/nodejs.sh
 
-msg "Installing yarn package manager..."
-rm -rf "$PREFIX/yarn"
-mkdir -p "$PREFIX/yarn"
-tar xf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
-    V=$("$YARN" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
-msg "  * yarn: $V"
-
 mkdir -p "$PREFIX/etc" || true
 [[ -e "$PREFIX/etc/yarnrc" ]] || touch "$PREFIX/etc/yarnrc" || true
 [[ -e "$PREFIX/etc/npmrc" ]] || touch "$PREFIX/etc/npmrc" || true
@@ -201,26 +195,34 @@ mkdir -p "$PREFIX/etc" || true
 replace_line "$PREFIX/etc/yarnrc" 'global-folder' "global-folder \"/usr/nodejs/lib\""
 replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix = \"$PREFIX\""
 
-if ! command_exists unpm ; then
-    msg "Installing unpm package manager..."
-    $YARN global add @idlebox/package-manager --silent --progress || msg "Failed to install @idlebox/package-manager. that is not fatal."
-    msg " -> ok."
-fi
-if ! command_exists pnpm ; then
-    msg "Installing pnpm package manager..."
-    $YARN global add pnpm --silent --progress || msg "Failed to install pnpm. that is not fatal."
-    msg " -> ok."
-fi
-if ! command_exists npm ; then
-    msg "Installing npm package manager..."
-    $YARN global add npm --silent --progress || msg "Failed to install npm. that is not fatal."
-    msg " -> ok."
+if [[ "${SYSTEM_COMMON_CACHE+found}" = found ]]; then
+	echo "Reset cache folder(s) to $SYSTEM_COMMON_CACHE"
+	if [[ "$("$NPM" -g config get cache)" != "$SYSTEM_COMMON_CACHE/npm" ]]; then
+		"$NPM" -g config set cache "$SYSTEM_COMMON_CACHE/npm"
+	fi
+	if [[ "$("$NPM" -g config get store-path)" != "$SYSTEM_COMMON_CACHE/pnpm" ]]; then
+		"$NPM" -g config set store-path "$SYSTEM_COMMON_CACHE/pnpm"
+	fi
+	replace_line "$PREFIX/etc/yarnrc" 'cache-folder' "cache-folder \"$SYSTEM_COMMON_CACHE/yarn\""
 fi
 
-if [ "${OLD_EXISTS}" ]; then
-    msg "rebuild global node_modules folder..."
-    CONFIG_PREFIX=$(/usr/nodejs/bin/npm config --global get prefix)
-    rebuild_global_packages "$CONFIG_PREFIX"
+msg "Installing yarn package manager..."
+rm -rf "$PREFIX/yarn"
+mkdir -p "$PREFIX/yarn"
+tar xf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
+	V=$("$YARN" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
+msg "  * yarn: $V"
+
+if ! command_exists unpm ; then
+	msg "Installing unpm package manager..."
+	$YARN global add unipm --silent --progress || msg "Failed to install @idlebox/package-manager. that is not fatal."
+	msg " -> ok."
 fi
-msg "nodejs install success."
+if ! command_exists pnpm ; then
+	msg "Installing pnpm package manager..."
+	curl -L https://raw.githubusercontent.com/pnpm/self-installer/master/install.js | node
+	msg " -> ok."
+fi
+
+msg "Node.JS install success."
 msg 'You should run "source /etc/profile.d/nodejs.sh" or restart current session to take effect.'
