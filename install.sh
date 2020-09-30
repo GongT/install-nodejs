@@ -224,7 +224,7 @@ declare -a GLOBAL_PACKAGE_TO_INSTALL=()
 if ! npm -v &> /dev/null; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(npm)
 fi
-if ! unpm -v | grep -q -- npm &> /dev/null ; then
+if ! unipm -v | grep -q -- npm &> /dev/null ; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(unipm)
 fi
 if ! pnpm -v &> /dev/null ; then
