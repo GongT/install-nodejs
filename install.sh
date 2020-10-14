@@ -23,7 +23,7 @@ function do_system_check() {
 	command_exists gzip || die "command 'gzip' not found, please install it"
 }
 function _wget() {
-	if wget --help 2>&1 | grep -- '--show-progress'; then
+	if wget --help 2>&1 | grep -q -- '--show-progress'; then
 		wget --continue --quiet --show-progress --progress=bar:force:noscroll "$1" -O "$2"
 	else
 		wget -c -q "$1" -O "$2"
