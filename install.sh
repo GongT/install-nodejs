@@ -23,7 +23,11 @@ function do_system_check() {
 	command_exists gzip || die "command 'gzip' not found, please install it"
 }
 function _wget() {
-	wget --quiet --show-progress --progress=bar:force:noscroll "$@"
+	if wget --help 2>&1 | grep -- '--show-progress'; then
+		wget --continue --quiet --show-progress --progress=bar:force:noscroll "$1" -O "$2"
+	else
+		wget -c -q "$1" -O "$2"
+	fi
 }
 function download_file() {
 	local url="$1"
@@ -35,7 +39,7 @@ function download_file() {
 	if [[ -e "$save_at" ]]; then
 		msg "    use cached file."
 	else
-		_wget "$url" -O "${save_at}.downloading" --continue || die "Cannot download."
+		_wget "$url" "${save_at}.downloading" || die "Cannot download."
 		mv "${save_at}.downloading" "${save_at}"
 		msg "    saved at ${save_at}"
 	fi
@@ -95,8 +99,7 @@ fi
 
 TMP="${TMPDIR-"/tmp"}"
 msg "system temp dir is $TMP"
-cd "$TMP"
-{ touch .test && unlink .test; } || die "System temp direcotry '$TMP' is not writable."
+cd "$TMP" && touch .test && rm .test || die "System temp direcotry '$TMP' is not writable."
 
 do_system_check
 
@@ -118,7 +121,7 @@ if [[ -e "$BIN" ]]; then
 fi
 
 if command_exists node && [[ "$(command -v node)" != "$BIN" ]]; then
-	msg -e "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
+	msg "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
 	msg "    this will cause error!"
 fi
 
@@ -155,7 +158,7 @@ msg " * package name: ${NODE_PACKAGE}"
 
 if [[ ${OLD_EXISTS} -eq 1 ]]; then
 	if echo "${NODE_PACKAGE}" | grep -q "$($BIN -v)"; then
-		unlink "$TMP_VERSION" || true
+		rm "$TMP_VERSION" || true
 		msg "official node.js not updated:"
 		msg "    current version: $($BIN -v)"
 		if [[ "${FORCE+found}" != found ]] || [[ "${FORCE}" != yes ]]; then
@@ -224,10 +227,10 @@ declare -a GLOBAL_PACKAGE_TO_INSTALL=()
 if ! npm -v &> /dev/null; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(npm)
 fi
-if ! unipm -v | grep -q -- npm &> /dev/null ; then
+if ! unipm -v | grep -q -- npm &> /dev/null; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(unipm)
 fi
-if ! pnpm -v &> /dev/null ; then
+if ! pnpm -v &> /dev/null; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(pnpm)
 fi
 
