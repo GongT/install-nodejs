@@ -208,13 +208,11 @@ if [[ "${SYSTEM_COMMON_CACHE+found}" = found ]]; then
 	if [[ "$("$NPM" -g config get cache)" != "$SYSTEM_COMMON_CACHE/npm" ]]; then
 		"$NPM" -g config set cache "$SYSTEM_COMMON_CACHE/npm"
 	fi
-	if [[ "$("$NPM" -g config get store-path)" != "$SYSTEM_COMMON_CACHE/pnpm" ]]; then
-		"$NPM" -g config set store-path "$SYSTEM_COMMON_CACHE/pnpm"
-	fi
 	replace_line "$PREFIX/etc/yarnrc" 'cache-folder' "cache-folder \"$SYSTEM_COMMON_CACHE/yarn\""
 
 	echo "export JSPM_GLOBAL_PATH='$SYSTEM_COMMON_CACHE/jspm'" >> /etc/profile.d/nodejs.sh
 fi
+"$NPM" -g config delete store-path
 
 msg "Installing yarn package manager..."
 rm -rf "$PREFIX/yarn"
