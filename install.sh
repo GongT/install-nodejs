@@ -9,12 +9,14 @@ function die() {
 	msg "$@"
 	exit 1
 }
+declare -r PREFIX=/usr/nodejs
 UNAME=$(uname -a) || die "uname -a failed."
 function check_system() {
-	echo "$UNAME" | grep -iq "${1}" 2> /dev/null
+	echo "$UNAME" | grep -iq "${1}" 2>/dev/null
 }
 function command_exists() {
-	command -v "$1" &> /dev/null
+	local -r PATH="$PATH:$PREFIX/bin"
+	command -v "$1" &>/dev/null
 }
 function do_system_check() {
 	command_exists wget || die "command 'wget' not found, please install it"
@@ -30,28 +32,28 @@ function _wget() {
 	fi
 }
 function download_file() {
-	local url="$1"
-	local temp="$TMP/$(basename "${url}")"
+	local url="$1" temp
+	temp="$DOWNLOAD/$(basename "${url}")"
 	local save_at=${2-"$temp"}
 
 	msg "Download file from $url:"
 	msg "    to: $save_at"
-	if [[ -e "$save_at" ]]; then
+	if [[ -e $save_at ]]; then
 		msg "    use cached file."
 	else
 		_wget "$url" "${save_at}.downloading" || die "Cannot download."
 		mv "${save_at}.downloading" "${save_at}"
 		msg "    saved at ${save_at}"
 	fi
-	if [[ -z "${2-""}" ]]; then
+	if [[ -z ${2-""} ]]; then
 		echo "$save_at"
 	fi
 }
 function replace_line() {
-	local FILE="$1" KEY="$2" RESULT="$3"
-	local OLD=$(< "$FILE")
-	local MID=$(echo "$OLD" | sed -E "s#^$KEY\b.+\$#__REPLACE_LINE__#g")
-	if [[ "$MID" == "$OLD" ]]; then
+	local FILE="$1" KEY="$2" RESULT="$3" OLD MID
+	OLD=$(<"$FILE")
+	MID=$(echo "$OLD" | sed -E "s#^$KEY\b.+\$#__REPLACE_LINE__#g")
+	if [[ $MID == "$OLD" ]]; then
 		local NEW="$OLD
 $RESULT
 "
@@ -59,9 +61,9 @@ $RESULT
 		local NEW=${MID/__REPLACE_LINE__/"$RESULT"}
 	fi
 
-	if [[ "$OLD" != "$NEW" ]]; then
+	if [[ $OLD != "$NEW" ]]; then
 		msg -e "modify file '$FILE'\n    \e[2m$RESULT\e[0m"
-		echo "$NEW" > "$FILE"
+		echo "$NEW" >"$FILE"
 	fi
 }
 function rebuild_global_packages() {
@@ -71,7 +73,7 @@ function rebuild_global_packages() {
 	cd "$1"
 	for i in */; do
 		i=${i%/}
-		if echo "$i" | grep -qE '^@' &> /dev/null; then
+		if echo "$i" | grep -qE '^@' &>/dev/null; then
 			for j in "$i"/*/; do
 				j=${j%/}
 				if [ ! -L "$j" ]; then
@@ -97,13 +99,24 @@ if command_exists id && [[ "$(id -u)" -ne 0 ]]; then
 	fi
 fi
 
-TMP="${TMPDIR-"/tmp"}"
-msg "system temp dir is $TMP"
-cd "$TMP" && touch .test && rm .test || die "System temp direcotry '$TMP' is not writable."
+if ! [[ "${TMPDIR:-}" ]]; then
+	export TMPDIR="/tmp"
+fi
+if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
+	DOWNLOAD="${SYSTEM_COMMON_CACHE}/Download"
+	msg "download dir is $DOWNLOAD"
+else
+	DOWNLOAD="${TMPDIR-"/tmp"}"
+	msg "temp download dir is $DOWNLOAD"
+fi
+(
+	mkdir -p "$DOWNLOAD"
+	cd "$DOWNLOAD"
+	touch .test && rm .test
+) || die "System temp direcotry '$DOWNLOAD' is not writable."
 
 do_system_check
 
-PREFIX=/usr/nodejs
 mkdir -p "$PREFIX" || die "Can not create directory at '$PREFIX'"
 
 BIN=${PREFIX}/bin/node
@@ -111,11 +124,11 @@ NPM=${PREFIX}/bin/npm
 YARN=$PREFIX/yarn/bin/yarn
 
 INSTALL_VERSION="${1-latest}"
-TMP_VERSION="$TMP/nodejs-version-$INSTALL_VERSION.txt"
-TMP_INDEX="$TMP/nodejs-versions-list.txt"
+TMP_VERSION="$TMPDIR/nodejs-version-$INSTALL_VERSION.txt"
+TMP_INDEX="$TMPDIR/nodejs-versions-list.txt"
 
 OLD_EXISTS="0"
-if [[ -e "$BIN" ]]; then
+if [[ -e $BIN ]]; then
 	msg "old nodejs exists."
 	OLD_EXISTS="1"
 fi
@@ -126,9 +139,9 @@ if command_exists node && [[ "$(command -v node)" != "$BIN" ]]; then
 fi
 
 msg "fetch version '$INSTALL_VERSION': "
-if [[ "$INSTALL_VERSION" == "latest" ]]; then
+if [[ $INSTALL_VERSION == "latest" ]]; then
 	download_file "https://nodejs.org/dist/latest/" "${TMP_VERSION}"
-elif [[ "$INSTALL_VERSION" -gt 0 ]]; then
+elif [[ $INSTALL_VERSION -gt 0 ]]; then
 	download_file "https://nodejs.org/dist/" "${TMP_INDEX}"
 
 	LATEST_SUB_VERSION=$(grep -Eo ">v${INSTALL_VERSION}\.[0-9]+\.[0-9]+/<" "${TMP_INDEX}" | grep -Eo "v${INSTALL_VERSION}\.[0-9]+\.[0-9]+" | sort --version-sort | tail -n1) \
@@ -161,15 +174,18 @@ if [[ ${OLD_EXISTS} -eq 1 ]]; then
 		rm "$TMP_VERSION" || true
 		msg "official node.js not updated:"
 		msg "    current version: $($BIN -v)"
-		if [[ "${FORCE+found}" != found ]] || [[ "${FORCE}" != yes ]]; then
+		if [[ ${FORCE+found} != found ]] || [[ ${FORCE} != yes ]] && command_exists yarn; then
 			exit 0
 		fi
+		msg "FORCE UPDATE"
+	else
+		msg "official node.js updated:"
+		msg "    current version: $($BIN -v)"
 	fi
 fi
 
 msg "Installing NodeJS..."
 NODEJS_ZIP_FILE=$(download_file "https://nodejs.org/dist/$INSTALL_VERSION/${NODE_PACKAGE}")
-YARN_ZIP_FILE=$(download_file "https://yarnpkg.com/latest-rc.tar.gz")
 
 msg "    extracting file:"
 tar xf "$NODEJS_ZIP_FILE" --strip-components=1 -C "$PREFIX" || die "     -> \e[38;5;9mfailed\e[0m."
@@ -186,55 +202,48 @@ fi
 msg "Creating profile..."
 {
 	echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'"
-	cat <<- 'DATA'
+	cat <<-'DATA'
 		if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
-			export PATH="$PATH:./node_modules/.bin:$_NODE_JS_INSTALL_PREFIX/yarn/bin:$_NODE_JS_INSTALL_PREFIX/bin"
+			export PATH="$PATH:./node_modules/.bin:$_NODE_JS_INSTALL_PREFIX/bin"
 		fi
 		unset _NODE_JS_INSTALL_PREFIX
 	DATA
 	echo
-} > /etc/profile.d/nodejs.sh
+} >/etc/profile.d/nodejs.sh
 source /etc/profile.d/nodejs.sh
 
 mkdir -p "$PREFIX/etc" || true
 [[ -e "$PREFIX/etc/yarnrc" ]] || touch "$PREFIX/etc/yarnrc" || true
 [[ -e "$PREFIX/etc/npmrc" ]] || touch "$PREFIX/etc/npmrc" || true
 
-replace_line "$PREFIX/etc/yarnrc" 'global-folder' "global-folder \"/usr/nodejs/lib\""
+replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
 replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix = \"$PREFIX\""
 
-if [[ "${SYSTEM_COMMON_CACHE+found}" = found ]]; then
+if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
 	echo "Reset cache folder(s) to $SYSTEM_COMMON_CACHE"
 	if [[ "$("$NPM" -g config get cache)" != "$SYSTEM_COMMON_CACHE/npm" ]]; then
 		"$NPM" -g config set cache "$SYSTEM_COMMON_CACHE/npm"
 	fi
 	replace_line "$PREFIX/etc/yarnrc" 'cache-folder' "cache-folder \"$SYSTEM_COMMON_CACHE/yarn\""
 
-	echo "export JSPM_GLOBAL_PATH='$SYSTEM_COMMON_CACHE/jspm'" >> /etc/profile.d/nodejs.sh
+	echo "export JSPM_GLOBAL_PATH='$SYSTEM_COMMON_CACHE/jspm'" >>/etc/profile.d/nodejs.sh
 fi
 "$NPM" -g config delete store-path
 
-msg "Installing yarn package manager..."
-rm -rf "$PREFIX/yarn"
-mkdir -p "$PREFIX/yarn"
-tar xf "$YARN_ZIP_FILE" -C "$PREFIX/yarn" --strip-components=1 || die "     -> \e[38;5;9mfailed\e[0m."
-V=$("$YARN" -v -v 2>&1) || die "emmmmmm... binary file '$PREFIX/yarn/bin/yarn' is not executable. that's weird."
-msg "  * yarn: $V"
-
 declare -a GLOBAL_PACKAGE_TO_INSTALL=()
-if ! npm -v &> /dev/null; then
-	GLOBAL_PACKAGE_TO_INSTALL+=(npm)
+if ! yarn -v &>/dev/null; then
+	GLOBAL_PACKAGE_TO_INSTALL+=(yarn)
 fi
-if ! unipm -v | grep -q -- npm &> /dev/null; then
+if ! unipm -v 2>/dev/null | grep -q -- npm; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(unipm)
 fi
-if ! pnpm -v &> /dev/null; then
+if ! pnpm -v &>/dev/null; then
 	GLOBAL_PACKAGE_TO_INSTALL+=(pnpm)
 fi
 
-if [[ "${#GLOBAL_PACKAGE_TO_INSTALL[@]}" -gt 0 ]]; then
+if [[ ${#GLOBAL_PACKAGE_TO_INSTALL[@]} -gt 0 ]]; then
 	msg "Installing ${GLOBAL_PACKAGE_TO_INSTALL[*]}..."
-	$YARN global add "${GLOBAL_PACKAGE_TO_INSTALL[@]}" --silent --progress || msg "Failed to install some package manager."
+	$NPM -g --unsafe-perm install "${GLOBAL_PACKAGE_TO_INSTALL[@]}" || msg "Failed to install some package manager."
 fi
 
 msg "Node.JS install success."
