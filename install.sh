@@ -62,7 +62,7 @@ $RESULT
 	fi
 
 	if [[ $OLD != "$NEW" ]]; then
-		msg -e "modify file '$FILE'\n    \e[2m$RESULT\e[0m"
+		msg "modify file '$FILE'\n    \e[2m$RESULT\e[0m"
 		echo "$NEW" >"$FILE"
 	fi
 }
