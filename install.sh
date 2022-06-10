@@ -218,6 +218,8 @@ mkdir -p "$PREFIX/etc" || true
 
 replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
 replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix = \"$PREFIX\""
+replace_line "$PREFIX/etc/npmrc" 'global-dir' "prefix = \"$PREFIX\""
+replace_line "$PREFIX/etc/npmrc" 'global-bin-dir' "prefix = \"$PREFIX\"/bin"
 
 if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
 	echo "Reset cache folder(s) to $SYSTEM_COMMON_CACHE"
