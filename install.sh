@@ -266,7 +266,7 @@ if [[ -d /run/systemd/system ]]; then
 		Type=simple
 		Environment=PATH=$PREFIX/bin
 		ExecStartPre=$PREFIX/bin/pnpm config list -l
-		ExecStart=$PREFIX/bin/pnpm server start --loglevel info --ignore-stop-requests --protocol tcp --dir '$STORE_PATH' --store-dir '$STORE_PATH'
+		ExecStart=$PREFIX/bin/pnpm server start --dir '$PREFIX' --store-dir '$STORE_PATH' --loglevel debug --use-stderr --ignore-stop-requests --protocol auto --port 25894 --network-concurrency 1000
 		Restart=always
 		RestartSec=10s
 		PrivateTmp=yes
