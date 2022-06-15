@@ -266,7 +266,7 @@ if [[ -d /run/systemd/system ]]; then
 		Type=simple
 		Environment=PATH=$PREFIX/bin
 		ExecStart=$PREFIX/bin/pnpm server start --loglevel info --ignore-stop-requests --protocol tcp --dir '$STORE_PATH' --store-dir '$STORE_PATH'
-		Restart=Always
+		Restart=always
 		RestartSec=10s
 		PrivateTmp=yes
 	SYSTEM_SOCKET
