@@ -265,6 +265,7 @@ if [[ -d /run/systemd/system ]]; then
 		[Service]
 		Type=simple
 		Environment=PATH=$PREFIX/bin
+		ExecStartPre=$PREFIX/bin/pnpm config list -l
 		ExecStart=$PREFIX/bin/pnpm server start --loglevel info --ignore-stop-requests --protocol tcp --dir '$STORE_PATH' --store-dir '$STORE_PATH'
 		Restart=always
 		RestartSec=10s
