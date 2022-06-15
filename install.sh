@@ -250,3 +250,27 @@ fi
 
 msg "Node.JS install success."
 msg 'You should run "source /etc/profile.d/nodejs.sh" or restart current session to take effect.'
+
+if [[ -d /run/systemd/system ]]; then
+	TMPF=$(mktemp)
+	STORE_PATH=$(pnpm store path)
+
+	cat <<-SYSTEM_SOCKET >"$TMPF"
+		[Unit]
+		After=multi-user.target network-online.target local-fs.target
+
+		[Install]
+		WantedBy=network.target
+
+		[Service]
+		Type=simple
+		Environment=PATH=$PREFIX/bin
+		ExecStart=$PREFIX/bin/pnpm server start --loglevel info --ignore-stop-requests --protocol tcp --dir '$STORE_PATH' --store-dir '$STORE_PATH'
+		Restart=Always
+		RestartSec=10s
+		PrivateTmp=yes
+	SYSTEM_SOCKET
+
+	EDITOR="mv $TMPF" systemctl edit --force --full pnpm-store-server.service
+	systemctl restart pnpm-store-server.service
+fi
