@@ -52,7 +52,7 @@ function download_file() {
 function replace_line() {
 	local FILE="$1" KEY="$2" RESULT="$3" OLD MID
 	OLD=$(<"$FILE")
-	MID=$(echo "$OLD" | sed -E "s#^$KEY\b.+\$#__REPLACE_LINE__#g")
+	MID=$(echo "$OLD" | sed -E "s#^${KEY}[ =].+\$#__REPLACE_LINE__#g")
 	if [[ $MID == "$OLD" ]]; then
 		local NEW="$OLD
 $RESULT
@@ -217,9 +217,43 @@ mkdir -p "$PREFIX/etc" || true
 [[ -e "$PREFIX/etc/npmrc" ]] || touch "$PREFIX/etc/npmrc" || true
 
 replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
-replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix = \"$PREFIX\""
-replace_line "$PREFIX/etc/npmrc" 'global-dir' "prefix = \"$PREFIX\""
-replace_line "$PREFIX/etc/npmrc" 'global-bin-dir' "prefix = \"$PREFIX\"/bin"
+replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix=$PREFIX"
+replace_line "$PREFIX/etc/npmrc" 'global-dir' "global-dir=$PREFIX"
+replace_line "$PREFIX/etc/npmrc" 'global-bin-dir' "global-bin-dir=$PREFIX/bin"
+replace_line "$PREFIX/etc/npmrc" 'access' "access=public"
+replace_line "$PREFIX/etc/npmrc" 'always-auth' 'always-auth=false'
+replace_line "$PREFIX/etc/npmrc" 'fetch-retries' 'fetch-retries=1000'
+replace_line "$PREFIX/etc/npmrc" 'network-concurrency' 'network-concurrency=3'
+replace_line "$PREFIX/etc/npmrc" 'prefer-offline' 'prefer-offline=true'
+
+function timing_registry() {
+	local REG="$1"
+	local http_proxy='' https_proxy='' HTTP_PROXY='' HTTPS_PROXY=''
+	local ts tt
+
+	nslookup "$REG" &>/dev/null
+
+	ts=$(date +%s%N)
+	curl "https://$REG/" &>/dev/null || true
+	curl "https://$REG/debug/package.json" &>/dev/null || true
+	tt=$(($(date +%s%N) - ts))
+
+	echo "Timing: [$tt] $REG" >&2
+	echo "$tt"
+}
+
+if ! grep -qE '\bregistry\s*=' "$PREFIX/etc/npmrc"; then
+	CHINA=$(timing_registry registry.npmmirror.com)
+	ORIGINAL=$(timing_registry registry.npmjs.org)
+
+	if [[ $CHINA -le $ORIGINAL ]]; then
+		echo "Using TaoBao npm mirror: npmmirror.com"
+		replace_line "$PREFIX/etc/npmrc" '\\# registry' "# registry=https://registry.npmmirror.com/"
+	else
+		replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com/"
+	fi
+	replace_line "$PREFIX/etc/npmrc" 'noproxy' "noproxy=registry.npmmirror.com,cdn.npmmirror.com,npmmirror.com"
+fi
 
 if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
 	echo "Reset cache folder(s) to $SYSTEM_COMMON_CACHE"
@@ -245,7 +279,7 @@ fi
 
 if [[ ${#GLOBAL_PACKAGE_TO_INSTALL[@]} -gt 0 ]]; then
 	msg "Installing ${GLOBAL_PACKAGE_TO_INSTALL[*]}..."
-	$NPM -g --unsafe-perm install "${GLOBAL_PACKAGE_TO_INSTALL[@]}" || msg "Failed to install some package manager."
+	$NPM -g --unsafe-perm --verbose install "${GLOBAL_PACKAGE_TO_INSTALL[@]}" || msg "Failed to install some package manager."
 fi
 
 msg "Node.JS install success."
@@ -255,9 +289,9 @@ if [[ -d /run/systemd/system ]]; then
 	TMPF=$(mktemp)
 	STORE_PATH=$(pnpm store path)
 
-	cat <<-SYSTEM_SOCKET >"$TMPF"
+	cat <<-SYSTEM_SERVICE >"$TMPF"
 		[Unit]
-		After=multi-user.target network-online.target local-fs.target
+		After=network.target local-fs.target
 
 		[Install]
 		WantedBy=network.target
@@ -266,11 +300,16 @@ if [[ -d /run/systemd/system ]]; then
 		Type=simple
 		Environment=PATH=$PREFIX/bin
 		ExecStartPre=$PREFIX/bin/pnpm config list -l
-		ExecStart=$PREFIX/bin/pnpm server start --dir '$PREFIX' --store-dir '$STORE_PATH' --loglevel debug --use-stderr --ignore-stop-requests --protocol auto --port 25894 --network-concurrency 1000
+		ExecStart=$PREFIX/bin/pnpm server start --dir '$PREFIX' --store-dir '$STORE_PATH' --loglevel debug --use-stderr --ignore-stop-requests --protocol auto --port 25894
 		Restart=always
 		RestartSec=10s
 		PrivateTmp=yes
-	SYSTEM_SOCKET
+
+	SYSTEM_SERVICE
+	if [[ "${PROXY:-}" ]]; then
+		echo "pnpm server using proxy: $PROXY"
+		echo "Environment=http_proxy='$PROXY' https_proxy='$PROXY' npm_config_proxy='$PROXY' npm_config_https_proxy='$PROXY'" >"$TMPF"
+	fi
 
 	EDITOR="mv $TMPF" systemctl edit --force --full pnpm-store-server.service
 	systemctl restart pnpm-store-server.service
