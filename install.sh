@@ -279,7 +279,7 @@ fi
 
 if [[ ${#GLOBAL_PACKAGE_TO_INSTALL[@]} -gt 0 ]]; then
 	msg "Installing ${GLOBAL_PACKAGE_TO_INSTALL[*]}..."
-	$NPM -g --unsafe-perm --verbose install "${GLOBAL_PACKAGE_TO_INSTALL[@]}" || msg "Failed to install some package manager."
+	"$NPM" -g --unsafe-perm install "${GLOBAL_PACKAGE_TO_INSTALL[@]}" || msg "Failed to install some package manager."
 fi
 
 msg "Node.JS install success."
