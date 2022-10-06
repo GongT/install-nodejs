@@ -248,9 +248,9 @@ if ! grep -qE '\bregistry\s*=' "$PREFIX/etc/npmrc"; then
 
 	if [[ $CHINA -le $ORIGINAL ]]; then
 		echo "Using TaoBao npm mirror: npmmirror.com"
-		replace_line "$PREFIX/etc/npmrc" '\\# registry' "# registry=https://registry.npmmirror.com/"
-	else
 		replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com/"
+	else
+		replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmjs.org/"
 	fi
 	replace_line "$PREFIX/etc/npmrc" 'noproxy' "noproxy=registry.npmmirror.com,cdn.npmmirror.com,npmmirror.com"
 fi
@@ -285,32 +285,3 @@ fi
 msg "Node.JS install success."
 msg 'You should run "source /etc/profile.d/nodejs.sh" or restart current session to take effect.'
 
-if [[ -d /run/systemd/system ]]; then
-	TMPF=$(mktemp)
-	STORE_PATH=$(pnpm store path)
-
-	cat <<-SYSTEM_SERVICE >"$TMPF"
-		[Unit]
-		After=network.target local-fs.target
-
-		[Install]
-		WantedBy=network.target
-
-		[Service]
-		Type=simple
-		Environment=PATH=$PREFIX/bin
-		ExecStartPre=$PREFIX/bin/pnpm config list -l
-		ExecStart=$PREFIX/bin/pnpm server start --dir '$PREFIX' --store-dir '$STORE_PATH' --loglevel debug --use-stderr --ignore-stop-requests --protocol auto --port 25894
-		Restart=always
-		RestartSec=10s
-		PrivateTmp=yes
-
-	SYSTEM_SERVICE
-	if [[ "${PROXY:-}" ]]; then
-		echo "pnpm server using proxy: $PROXY"
-		echo "Environment=http_proxy='$PROXY' https_proxy='$PROXY' npm_config_proxy='$PROXY' npm_config_https_proxy='$PROXY'" >"$TMPF"
-	fi
-
-	EDITOR="mv $TMPF" systemctl edit --force --full pnpm-store-server.service
-	systemctl restart pnpm-store-server.service
-fi
