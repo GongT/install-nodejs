@@ -223,7 +223,7 @@ function update_config() {
 
 	replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
 	replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix=$PREFIX"
-	replace_line "$PREFIX/etc/npmrc" 'global-dir' "global-dir=$PREFIX/pnpm-global"
+	replace_line "$PREFIX/etc/npmrc" 'global-dir' "global-dir=$PREFIX/lib/pnpm-global"
 	replace_line "$PREFIX/etc/npmrc" 'global-bin-dir' "global-bin-dir=$PREFIX/bin"
 	replace_line "$PREFIX/etc/npmrc" 'access' "access=public"
 	replace_line "$PREFIX/etc/npmrc" 'always-auth' 'always-auth=false'
@@ -306,32 +306,17 @@ function install_pnpm() {
 
 	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules/npm"
 
-	platform="$(detect_platform)" || die "Not supported platform"
-	arch="$(detect_arch)" || die "Not supported architectures."
+	corepack enable npm pnpm yarn
+	echo -n "    - npm: "
+	npm --version
 
-	TMP_JSON=$(mktemp --dry-run)
-	download_file "https://registry.npmjs.org/@pnpm/exe" "$TMP_JSON"
-	version=$(tr '{' '\n' <"$TMP_JSON" | awk -F '"' '/latest/ { print $4 }')
-
-	PNPM_ARCHIVE=$(download_file "https://registry.npmjs.org/@pnpm/${platform}-${arch}/-/${platform}-${arch}-${version}.tgz")
-
-	msg "    extracting file:"
-	tar xf "$PNPM_ARCHIVE" --strip-components=1 -C "$TMPDIR" || die "     -> \e[38;5;9mfailed\e[0m."
-	msg "     -> ok."
-
-	chmod a+x "$TMPDIR/pnpm"
-	msg "    * $("$TMPDIR/pnpm" --version)"
-	rm -f "$TMP_JSON"
-
-	export PNPM_HOME="$PREFIX/pnpm-global"
-	export npm_config_global_bin_dir="$PREFIX/bin"
-	"$TMPDIR/pnpm" -g add pnpm @gongt/pnpm-instead-npm
+	echo -n "    - pnpm: "
+	pnpm --version
 }
 
 function install_other_packages() {
 	msg "Installing other package managers..."
-	"$PNPM" -g add yarn unipm @microsoft/rush
-	# pnpm -g add @gongt/pnpm-instead-npm
+	"$PNPM" -g add unipm @microsoft/rush @gongt/pnpm-instead-npm
 }
 
 if command_exists id && [[ "$(id -u)" -ne 0 ]]; then

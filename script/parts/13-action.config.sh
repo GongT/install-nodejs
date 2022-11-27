@@ -23,7 +23,7 @@ function update_config() {
 
 	replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
 	replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix=$PREFIX"
-	replace_line "$PREFIX/etc/npmrc" 'global-dir' "global-dir=$PREFIX/pnpm-global"
+	replace_line "$PREFIX/etc/npmrc" 'global-dir' "global-dir=$PREFIX/lib/pnpm-global"
 	replace_line "$PREFIX/etc/npmrc" 'global-bin-dir' "global-bin-dir=$PREFIX/bin"
 	replace_line "$PREFIX/etc/npmrc" 'access' "access=public"
 	replace_line "$PREFIX/etc/npmrc" 'always-auth' 'always-auth=false'

@@ -46,30 +46,14 @@ function install_pnpm() {
 
 	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules/npm"
 
-	platform="$(detect_platform)" || die "Not supported platform"
-	arch="$(detect_arch)" || die "Not supported architectures."
-
-	TMP_JSON=$(mktemp --dry-run)
-	download_file "https://registry.npmjs.org/@pnpm/exe" "$TMP_JSON"
-	version=$(tr '{' '\n' <"$TMP_JSON" | awk -F '"' '/latest/ { print $4 }')
-
-	PNPM_ARCHIVE=$(download_file "https://registry.npmjs.org/@pnpm/${platform}-${arch}/-/${platform}-${arch}-${version}.tgz")
-
-	msg "    extracting file:"
-	tar xf "$PNPM_ARCHIVE" --strip-components=1 -C "$TMPDIR" || die "     -> \e[38;5;9mfailed\e[0m."
-	msg "     -> ok."
-
-	chmod a+x "$TMPDIR/pnpm"
-	msg "    * $("$TMPDIR/pnpm" --version)"
-	rm -f "$TMP_JSON"
-
-	export PNPM_HOME="$PREFIX/pnpm-global"
-	export npm_config_global_bin_dir="$PREFIX/bin"
-	"$TMPDIR/pnpm" -g add pnpm @gongt/pnpm-instead-npm
+	corepack enable npm pnpm yarn
+	echo -n "    - pnpm: "
+	pnpm --version
+	echo -n "    - npm: "
+	npm --version
 }
 
 function install_other_packages() {
 	msg "Installing other package managers..."
-	"$PNPM" -g add yarn unipm @microsoft/rush
-	# pnpm -g add @gongt/pnpm-instead-npm
+	"$PNPM" -g add unipm @microsoft/rush @gongt/pnpm-instead-npm
 }
