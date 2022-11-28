@@ -7,7 +7,7 @@ function create_nodejs_profile() {
 		echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'"
 		cat <<-'DATA'
 			if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
-				export PATH="$PATH:./node_modules/.bin:$_NODE_JS_INSTALL_PREFIX/bin"
+				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$_NODE_JS_INSTALL_PREFIX/bin"
 			fi
 			unset _NODE_JS_INSTALL_PREFIX
 		DATA

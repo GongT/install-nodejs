@@ -190,7 +190,7 @@ function create_nodejs_profile() {
 		echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'"
 		cat <<-'DATA'
 			if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
-				export PATH="$PATH:./node_modules/.bin:$_NODE_JS_INSTALL_PREFIX/bin"
+				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$_NODE_JS_INSTALL_PREFIX/bin"
 			fi
 			unset _NODE_JS_INSTALL_PREFIX
 		DATA
@@ -307,11 +307,10 @@ function install_pnpm() {
 	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules/npm"
 
 	corepack enable npm pnpm yarn
-	echo -n "    - npm: "
-	npm --version
-
 	echo -n "    - pnpm: "
 	pnpm --version
+	echo -n "    - npm: "
+	npm --version
 }
 
 function install_other_packages() {
