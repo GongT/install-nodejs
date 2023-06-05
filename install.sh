@@ -36,14 +36,19 @@ function command_exists() {
 	command -v "$1" &>/dev/null
 }
 
+function find_command() {
+	local -r PATH="$PATH:$PREFIX/bin"
+	command -v "$1"
+}
+
 function do_system_check() {
 	command_exists wget || die "command 'wget' not found, please install it"
 	command_exists dirname || die "command 'dirname' not found, please install coreutils"
 	command_exists tar || die "command 'tar' not found, please install it"
 	command_exists gzip || die "command 'gzip' not found, please install it"
 
-	if command_exists node && [[ "$(command -v node)" != "$BIN" ]]; then
-		msg "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
+	if command_exists node && [[ "$(find_command node)" != "$BIN" ]]; then
+		msg "\e[38;5;9mAnother node.js installed at $(find_command node)!\e[0m"
 		msg "    this will cause error!"
 		exit 1
 	fi
