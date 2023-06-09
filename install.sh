@@ -306,16 +306,16 @@ detect_arch() {
 	printf '%s' "${arch}"
 }
 
-function install_pnpm() {
-	msg "Installing pnpm..."
+function install_pm() {
+	msg "Installing package managers..."
 
-	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules/npm"
-
-	corepack enable npm pnpm yarn
-	echo -n "    - pnpm: "
-	pnpm --version
+	corepack enable pnpm yarn
 	echo -n "    - npm: "
 	npm --version
+	echo -n "    - pnpm: "
+	pnpm --version
+	echo -n "    - yarn: "
+	yarn --version
 }
 
 function install_other_packages() {
@@ -351,5 +351,5 @@ install_nodejs
 create_nodejs_profile
 update_config
 
-install_pnpm
+install_pm
 install_other_packages
