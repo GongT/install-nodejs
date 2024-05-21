@@ -3,10 +3,10 @@
 declare -r PREFIX=/usr/nodejs
 UNAME=$(uname -a) || die "uname -a failed."
 
-declare -r BIN=${PREFIX}/bin/node
-declare -r NPM=${PREFIX}/bin/npm
-declare -r PNPM=${PREFIX}/bin/pnpm
-declare -r YARN=$PREFIX/yarn/bin/yarn
+declare -r BIN="${PREFIX}/bin/node"
+declare -r NPM="${PREFIX}/bin/npm"
+declare -r PNPM="${PREFIX}/bin/pnpm"
+declare -r YARN="${PREFIX}/bin/yarn"
 
 INSTALL_VERSION="${1-latest}"
 

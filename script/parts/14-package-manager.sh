@@ -2,58 +2,47 @@
 
 ### curl https://get.pnpm.io/install.sh
 
-detect_platform() {
-	local platform
-	platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
-
-	case "${platform}" in
-	linux) platform="linux" ;;
-	darwin) platform="macos" ;;
-	windows) platform="win" ;;
-	esac
-
-	printf '%s' "${platform}"
+_fetch() {
+	curl -fsSL "$1"
 }
 
-detect_arch() {
-	local arch
-	arch="$(uname -m | tr '[:upper:]' '[:lower:]')"
+download_using_pnpm() {
+	local http_proxy='' https_proxy='' all_proxy='' HTTP_PROXY='' HTTPS_PROXY='' ALL_PROXY=''
+	msg "  metadata: $npm_config_registry/pnpm"
+	version_json="$(_fetch "$npm_config_registry/pnpm")" || die "Download Error!"
+	version="$(printf '%s' "${version_json}" | jq -r '."dist-tags".latest')"
+	msg "  version: $version"
 
-	case "${arch}" in
-	x86_64) arch="x64" ;;
-	amd64) arch="x64" ;;
-	armv*) arch="arm" ;;
-	arm64 | aarch64) arch="arm64" ;;
-	esac
+	archive_url="$(printf '%s' "${version_json}" | jq --arg version "$version" -r '.versions[$version].dist.tarball')"
+	msg "  tarball: $archive_url"
 
-	# `uname -m` in some cases mis-reports 32-bit OS as 64-bit, so double check
-	if [ "${arch}" = "x64" ] && [ "$(getconf LONG_BIT)" -eq 32 ]; then
-		arch=i686
-	elif [ "${arch}" = "arm64" ] && [ "$(getconf LONG_BIT)" -eq 32 ]; then
-		arch=arm
-	fi
+	curl -fL "$archive_url" >"pnpm.tgz.download"
+	mv "pnpm.tgz.download" "pnpm.tgz"
+	tar xf "pnpm.tgz"
 
-	case "$arch" in
-	x64*) ;;
-	arm64*) ;;
-	*) return 1 ;;
-	esac
-	printf '%s' "${arch}"
+	"$BIN" ./package/bin/pnpm.cjs -g add pnpm@latest npm@latest yarn@latest || die "failed execute temp file"
 }
 
-function install_pnpm() {
-	msg "Installing pnpm..."
+function install_package_managers() {
+	TMPD=$(mktemp -d)
+	pushd "$TMPD" >/dev/null || die "temp dir not found!"
+	msg "Installing package managers..."
 
-	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules/npm"
+	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules"
+	download_using_pnpm
 
-	corepack enable npm pnpm yarn
 	echo -n "    - pnpm: "
-	pnpm --version
+	"$PNPM" --version
 	echo -n "    - npm: "
-	npm --version
+	"$NPM" --version
+	echo -n "    - yarn: "
+	"$YARN" --version
+
+	popd >/dev/null || die "???"
+	rm -rf "$TMPD"
 }
 
 function install_other_packages() {
 	msg "Installing other package managers..."
-	"$PNPM" -g add unipm @microsoft/rush @gongt/pnpm-instead-npm
+	"$PNPM" -g add unipm @microsoft/rush
 }

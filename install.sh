@@ -5,10 +5,10 @@ set -Eeuo pipefail
 declare -r PREFIX=/usr/nodejs
 UNAME=$(uname -a) || die "uname -a failed."
 
-declare -r BIN=${PREFIX}/bin/node
-declare -r NPM=${PREFIX}/bin/npm
-declare -r PNPM=${PREFIX}/bin/pnpm
-declare -r YARN=$PREFIX/yarn/bin/yarn
+declare -r BIN="${PREFIX}/bin/node"
+declare -r NPM="${PREFIX}/bin/npm"
+declare -r PNPM="${PREFIX}/bin/pnpm"
+declare -r YARN="${PREFIX}/bin/yarn"
 
 INSTALL_VERSION="${1-latest}"
 
@@ -36,19 +36,14 @@ function command_exists() {
 	command -v "$1" &>/dev/null
 }
 
-function find_command() {
-	local -r PATH="$PATH:$PREFIX/bin"
-	command -v "$1"
-}
-
 function do_system_check() {
 	command_exists wget || die "command 'wget' not found, please install it"
 	command_exists dirname || die "command 'dirname' not found, please install coreutils"
 	command_exists tar || die "command 'tar' not found, please install it"
 	command_exists gzip || die "command 'gzip' not found, please install it"
 
-	if command_exists node && [[ "$(find_command node)" != "$BIN" ]]; then
-		msg "\e[38;5;9mAnother node.js installed at $(find_command node)!\e[0m"
+	if command_exists node && [[ "$(command -v node)" != "$BIN" ]]; then
+		msg "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
 		msg "    this will cause error!"
 		exit 1
 	fi
@@ -241,17 +236,26 @@ function update_config() {
 }
 
 function set_registy() {
+	export npm_config_registry='https://registry.npmjs.org'
 	if ! grep -qE '\bregistry\s*=' "$PREFIX/etc/npmrc"; then
 		CHINA=$(timing_registry registry.npmmirror.com)
 		ORIGINAL=$(timing_registry registry.npmjs.org)
 
 		if [[ $CHINA -le $ORIGINAL ]]; then
 			echo "Using TaoBao npm mirror: npmmirror.com"
-			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com/"
+			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com"
+			export npm_config_registry='https://registry.npmmirror.com'
 		else
-			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmjs.org/"
+			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmjs.org"
 		fi
 		replace_line "$PREFIX/etc/npmrc" 'noproxy' "noproxy=registry.npmmirror.com,cdn.npmmirror.com,npmmirror.com"
+	else
+		reg=$(grep -E '^registry\s*=' "$PREFIX/etc/npmrc" | tr '=' ' ' | awk '{print $2}')
+		if [[ $reg == http* ]]; then
+			echo "Using Config npm registry: $reg"
+			export npm_config_registry="${reg%/}"
+
+		fi
 	fi
 }
 
@@ -267,60 +271,49 @@ function set_cache_path() {
 
 ### curl https://get.pnpm.io/install.sh
 
-detect_platform() {
-	local platform
-	platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
-
-	case "${platform}" in
-	linux) platform="linux" ;;
-	darwin) platform="macos" ;;
-	windows) platform="win" ;;
-	esac
-
-	printf '%s' "${platform}"
+_fetch() {
+	curl -fsSL "$1"
 }
 
-detect_arch() {
-	local arch
-	arch="$(uname -m | tr '[:upper:]' '[:lower:]')"
+download_using_pnpm() {
+	local http_proxy='' https_proxy='' all_proxy='' HTTP_PROXY='' HTTPS_PROXY='' ALL_PROXY=''
+	msg "  metadata: $npm_config_registry/pnpm"
+	version_json="$(_fetch "$npm_config_registry/pnpm")" || die "Download Error!"
+	version="$(printf '%s' "${version_json}" | jq -r '."dist-tags".latest')"
+	msg "  version: $version"
 
-	case "${arch}" in
-	x86_64) arch="x64" ;;
-	amd64) arch="x64" ;;
-	armv*) arch="arm" ;;
-	arm64 | aarch64) arch="arm64" ;;
-	esac
+	archive_url="$(printf '%s' "${version_json}" | jq --arg version "$version" -r '.versions[$version].dist.tarball')"
+	msg "  tarball: $archive_url"
 
-	# `uname -m` in some cases mis-reports 32-bit OS as 64-bit, so double check
-	if [ "${arch}" = "x64" ] && [ "$(getconf LONG_BIT)" -eq 32 ]; then
-		arch=i686
-	elif [ "${arch}" = "arm64" ] && [ "$(getconf LONG_BIT)" -eq 32 ]; then
-		arch=arm
-	fi
+	curl -fL "$archive_url" >"pnpm.tgz.download"
+	mv "pnpm.tgz.download" "pnpm.tgz"
+	tar xf "pnpm.tgz"
 
-	case "$arch" in
-	x64*) ;;
-	arm64*) ;;
-	*) return 1 ;;
-	esac
-	printf '%s' "${arch}"
+	"$BIN" ./package/bin/pnpm.cjs -g add pnpm@latest npm@latest yarn@latest || die "failed execute temp file"
 }
 
-function install_pm() {
+function install_package_managers() {
+	TMPD=$(mktemp -d)
+	pushd "$TMPD" >/dev/null || die "temp dir not found!"
 	msg "Installing package managers..."
 
-	corepack enable pnpm yarn
-	echo -n "    - npm: "
-	npm --version
+	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules"
+	download_using_pnpm
+
 	echo -n "    - pnpm: "
-	pnpm --version
+	"$PNPM" --version
+	echo -n "    - npm: "
+	"$NPM" --version
 	echo -n "    - yarn: "
-	yarn --version
+	"$YARN" --version
+
+	popd >/dev/null || die "???"
+	rm -rf "$TMPD"
 }
 
 function install_other_packages() {
 	msg "Installing other package managers..."
-	"$PNPM" -g add unipm @microsoft/rush @gongt/pnpm-instead-npm
+	"$PNPM" -g add unipm @microsoft/rush
 }
 
 if command_exists id && [[ "$(id -u)" -ne 0 ]]; then
@@ -351,5 +344,5 @@ install_nodejs
 create_nodejs_profile
 update_config
 
-install_pm
+install_package_managers
 install_other_packages

@@ -36,17 +36,26 @@ function update_config() {
 }
 
 function set_registy() {
+	export npm_config_registry='https://registry.npmjs.org'
 	if ! grep -qE '\bregistry\s*=' "$PREFIX/etc/npmrc"; then
 		CHINA=$(timing_registry registry.npmmirror.com)
 		ORIGINAL=$(timing_registry registry.npmjs.org)
 
 		if [[ $CHINA -le $ORIGINAL ]]; then
 			echo "Using TaoBao npm mirror: npmmirror.com"
-			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com/"
+			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com"
+			export npm_config_registry='https://registry.npmmirror.com'
 		else
-			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmjs.org/"
+			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmjs.org"
 		fi
 		replace_line "$PREFIX/etc/npmrc" 'noproxy' "noproxy=registry.npmmirror.com,cdn.npmmirror.com,npmmirror.com"
+	else
+		reg=$(grep -E '^registry\s*=' "$PREFIX/etc/npmrc" | tr '=' ' ' | awk '{print $2}')
+		if [[ $reg == http* ]]; then
+			echo "Using Config npm registry: $reg"
+			export npm_config_registry="${reg%/}"
+
+		fi
 	fi
 }
 

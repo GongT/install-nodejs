@@ -5,5 +5,5 @@ install_nodejs
 create_nodejs_profile
 update_config
 
-install_pnpm
+install_package_managers
 install_other_packages
