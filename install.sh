@@ -12,7 +12,7 @@ declare -r YARN="${PREFIX}/bin/yarn"
 
 INSTALL_VERSION="${1-latest}"
 
-if ! [[ "${TMPDIR:-}" ]]; then
+if ! [[ "${TMPDIR-}" ]]; then
 	export TMPDIR="/tmp"
 fi
 
@@ -47,13 +47,22 @@ function do_system_check() {
 		msg "    this will cause error!"
 		exit 1
 	fi
-}
 
-function _wget() {
-	if wget --help 2>&1 | grep -q -- '--show-progress'; then
-		wget --continue --quiet --show-progress --progress=bar:force:noscroll "$1" -O "$2"
+	if wget --help 2>&1 | grep -q -- 'wget2'; then
+		msg "using wget2"
+		function _wget() {
+			wget --continue --quiet --progress=bar --force-progress "$1" -O "$2"
+		}
+	elif wget --help 2>&1 | grep -q -- '--show-progress'; then
+		msg "using legacy wget"
+		function _wget() {
+			wget --continue --quiet --show-progress --progress=bar:force:noscroll "$1" -O "$2"
+		}
 	else
-		wget -c -q "$1" -O "$2"
+		msg "using busybox wget"
+		function _wget() {
+			wget -c -q "$1" -O "$2"
+		}
 	fi
 }
 
