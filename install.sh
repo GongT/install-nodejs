@@ -156,7 +156,8 @@ function install_nodejs() {
 	fi
 	msg " * system name: ${PACKAGE_TAG}"
 
-	NODE_PACKAGE=$(grep -Eo 'href="node-v[0-9.]+-'${PACKAGE_TAG}'-x64.tar.xz"' "$TMP_VERSION" | sed 's/^href="//; s/"$//') \
+	VERSION_REGEX="href=\".*node-v[0-9.]+-${PACKAGE_TAG}-x64\\.tar\\.xz\""
+	NODE_PACKAGE=$(grep -Eo "${VERSION_REGEX}" "$TMP_VERSION" | sed 's/^href="//; s/"$//') \
 		|| die "failed to detect nodejs version from downloaded html. (file has saved at '$TMP_VERSION')"
 	msg " * package name: ${NODE_PACKAGE}"
 
@@ -178,7 +179,15 @@ function install_nodejs() {
 	fi
 
 	msg "Installing NodeJS..."
-	NODEJS_ZIP_FILE=$(download_file "https://nodejs.org/dist/$INSTALL_VERSION/${NODE_PACKAGE}")
+
+	DOWNLOAD_URL="${NODE_PACKAGE}"
+	if [[ "${NODE_PACKAGE}" == /*  ]] ; then
+		DOWNLOAD_URL="https://nodejs.org${NODE_PACKAGE}"
+	else
+		DOWNLOAD_URL="https://nodejs.org/dist/$INSTALL_VERSION/${NODE_PACKAGE}"
+	fi
+
+	NODEJS_ZIP_FILE=$(download_file "${DOWNLOAD_URL}")
 
 	msg "    extracting file:"
 	tar xf "$NODEJS_ZIP_FILE" --strip-components=1 -C "$PREFIX" || die "     -> \e[38;5;9mfailed\e[0m."
