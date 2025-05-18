@@ -232,19 +232,19 @@ function update_config() {
 
 	replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
 	replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix=$PREFIX"
-	replace_line "$PREFIX/etc/npmrc" 'global-dir' "global-dir=$PREFIX/lib/pnpm-global"
-	replace_line "$PREFIX/etc/npmrc" 'global-bin-dir' "global-bin-dir=$PREFIX/bin"
 	replace_line "$PREFIX/etc/npmrc" 'access' "access=public"
-	replace_line "$PREFIX/etc/npmrc" 'always-auth' 'always-auth=false'
 	replace_line "$PREFIX/etc/npmrc" 'fetch-retries' 'fetch-retries=1000'
-	replace_line "$PREFIX/etc/npmrc" 'network-concurrency' 'network-concurrency=3'
-	replace_line "$PREFIX/etc/npmrc" 'prefer-offline' 'prefer-offline=true'
 
-	set_registy
+	replace_line "$HOME/.config/pnpm/rc" 'global-dir' "global-dir=$PREFIX/lib/pnpm-global"
+	replace_line "$HOME/.config/pnpm/rc" 'network-concurrency' 'network-concurrency=3'
+	replace_line "$HOME/.config/pnpm/rc" 'always-auth' 'always-auth=false'
+	replace_line "$HOME/.config/pnpm/rc" 'global-bin-dir' "global-bin-dir=$PREFIX/bin"
+
+	set_registry
 	set_cache_path
 }
 
-function set_registy() {
+function set_registry() {
 	export npm_config_registry='https://registry.npmjs.org'
 	if ! grep -qE '\bregistry\s*=' "$PREFIX/etc/npmrc"; then
 		CHINA=$(timing_registry registry.npmmirror.com)
