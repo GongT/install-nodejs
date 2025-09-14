@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-
 set -Eeuo pipefail
+shopt -s inherit_errexit extglob nullglob globstar lastpipe shift_verbose
 
-declare -r PREFIX=/usr/nodejs
-UNAME=$(uname -a) || die "uname -a failed."
+if command_exists id && [[ "$(id -u)" -ne 0 ]]; then
+	msg "not privileged user."
+	if command_exists sudo; then
+		msg "re-invoke with sudo... (will fail if password is required from commandline)"
+		exec sudo bash
+	fi
+fi
 
-declare -r BIN="${PREFIX}/bin/node"
-declare -r NPM="${PREFIX}/bin/npm"
-declare -r PNPM="${PREFIX}/bin/pnpm"
-declare -r YARN="${PREFIX}/bin/yarn"
-
-INSTALL_VERSION="${1-latest}"
+if [[ -e "/data/DevelopmentRoot" ]]; then
+	declare -x PNPM_HOME=/data/DevelopmentRoot/pnpm
+else
+	declare -x PNPM_HOME=/usr/local/share/pnpm
+fi
+declare -r PNPM_BIN="$PNPM_HOME/pnpm"
 
 if ! [[ "${TMPDIR:-}" ]]; then
 	export TMPDIR="/tmp"
 fi
-
-declare -r TMP_VERSION="$TMPDIR/nodejs-version-$INSTALL_VERSION.txt"
-declare -r TMP_INDEX="$TMPDIR/nodejs-versions-list.txt"
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT INT TERM HUP
 
 function msg() {
 	echo -e "$*" >&2
@@ -25,28 +29,6 @@ function msg() {
 function die() {
 	msg "$@"
 	exit 1
-}
-
-function check_system() {
-	echo "$UNAME" | grep -iq "${1}" 2>/dev/null
-}
-
-function command_exists() {
-	local -r PATH="$PATH:$PREFIX/bin"
-	command -v "$1" &>/dev/null
-}
-
-function do_system_check() {
-	command_exists wget || die "command 'wget' not found, please install it"
-	command_exists dirname || die "command 'dirname' not found, please install coreutils"
-	command_exists tar || die "command 'tar' not found, please install it"
-	command_exists gzip || die "command 'gzip' not found, please install it"
-
-	if command_exists node && [[ "$(command -v node)" != "$BIN" ]]; then
-		msg "\e[38;5;9mAnother node.js installed at $(command -v node)!\e[0m"
-		msg "    this will cause error!"
-		exit 1
-	fi
 }
 
 function _wget() {
@@ -57,23 +39,175 @@ function _wget() {
 	fi
 }
 
-function download_file() {
-	local url="$1" temp
-	temp="$DOWNLOAD/$(basename "${url}")"
-	local save_at=${2-"$temp"}
+function timing_registry() {
+	local REG="$1" TIMEOUT="${2-5}"
+	local http_proxy='' https_proxy='' all_proxy='' HTTP_PROXY='' HTTPS_PROXY='' ALL_PROXY=''
+	local ts te tt
 
-	msg "Download file from $url:"
-	msg "    to: $save_at"
-	if [[ -e $save_at ]]; then
-		msg "    use cached file."
+	nslookup "$REG" &>/dev/null
+
+	ts=$(date '+%s.%N')
+	curl --connect-timeout "$TIMEOUT" "https://$REG/" &>/dev/null || true
+	curl --connect-timeout "$TIMEOUT" "https://$REG/debug/package.json" &>/dev/null || true
+	te=$(date '+%s.%N')
+
+	tt=$(echo "$te" "$ts" | awk '{printf "%f", $1 - $2}')
+
+	echo "Timing: [$tt] $REG" >&2
+	printf "%s" "$tt"
+}
+
+function set_registry() {
+	local CHINA ORIGINAL CHINA_FASTER
+	CHINA=$(timing_registry registry.npmmirror.com)
+	ORIGINAL=$(timing_registry registry.npmjs.org)
+	CHINA_FASTER=$(printf "%f < %f\n" "${CHINA}" "${ORIGINAL}" | bc)
+
+	if [[ $CHINA_FASTER -eq 1 ]]; then
+		echo "Using TaoBao npm mirror: npmmirror.com"
+		export npm_config_registry='https://registry.npmmirror.com'
 	else
-		_wget "$url" "${save_at}.downloading" || die "Cannot download."
-		mv "${save_at}.downloading" "${save_at}"
-		msg "    saved at ${save_at}"
+		echo "Using Global npm mirror: registry.npmjs.org"
+		export npm_config_registry='https://registry.npmjs.org'
 	fi
-	if [[ -z ${2-""} ]]; then
-		echo "$save_at"
+}
+
+is_glibc_compatible() {
+	getconf GNU_LIBC_VERSION >/dev/null 2>&1 || ldd --version >/dev/null 2>&1 || return 1
+}
+
+detect_platform() {
+	local platform
+	platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
+
+	case "${platform}" in
+	linux)
+		if is_glibc_compatible; then
+			platform="linux"
+		else
+			platform="linuxstatic"
+		fi
+		;;
+	darwin) platform="macos" ;;
+	windows) platform="win" ;;
+	mingw*) platform="win" ;;
+	esac
+
+	printf '%s' "${platform}"
+}
+
+detect_arch() {
+	local arch
+	arch="$(uname -m | tr '[:upper:]' '[:lower:]')"
+
+	case "${arch}" in
+	x86_64 | amd64) arch="x64" ;;
+	armv*) arch="arm" ;;
+	arm64 | aarch64) arch="arm64" ;;
+	esac
+
+	# `uname -m` in some cases mis-reports 32-bit OS as 64-bit, so double check
+	if [ "${arch}" = "x64" ] && [ "$(getconf LONG_BIT)" -eq 32 ]; then
+		arch=i686
+	elif [ "${arch}" = "arm64" ] && [ "$(getconf LONG_BIT)" -eq 32 ]; then
+		arch=arm
 	fi
+
+	case "$arch" in
+	x64*) ;;
+	arm64*) ;;
+	*) return 1 ;;
+	esac
+	printf '%s' "${arch}"
+}
+
+_pnpm_download_and_install() {
+	local platform arch version_json version archive_url temp_bin
+	platform="$(detect_platform)"
+
+	if [ "${platform}" = "win" ]; then
+		die "this script does not support Windows, please use pwsh script (install.ps1)"
+	fi
+
+	arch="$(detect_arch)" || die "Sorry! pnpm currently only provides pre-built binaries for x86_64/arm64 architectures."
+	version_json="$(wget -qO- "${npm_config_registry}/@pnpm/exe")" || die "Download Error!"
+	version="$(echo "$version_json" | grep -o '"latest":[[:space:]]*"[0-9.]*"' | grep -o '[0-9.]*')"
+
+	archive_url="https://github.com/pnpm/pnpm/releases/download/v${version}/pnpm-${platform}-${arch}"
+	temp_bin="$tmp_dir/pnpm-${version}-${platform}-${arch}"
+
+	msg "Downloading pnpm binaries ${version}"
+	# download the binary to the specified directory
+	_wget "$archive_url" "$temp_bin"
+	chmod +x "$temp_bin"
+
+	mkdir -p "$PNPM_HOME"
+
+	if [[ -e ${PNPM_BIN} ]]; then
+		rm -f "${PNPM_BIN}.old"
+		mv "${PNPM_BIN}" "${PNPM_BIN}.old"
+		rm -f "${PNPM_BIN}.old" || true
+	fi
+
+	cp -f "$temp_bin" "${PNPM_BIN}"
+}
+
+function install_pnpm() {
+	if [[ -e ${PNPM_BIN} ]]; then
+		CURRENT_VERSION=$("${PNPM_BIN}" --version)
+
+		"${PNPM_BIN}" self-update
+		NEW_VERSION=$("${PNPM_BIN}" --version)
+	else
+		_pnpm_download_and_install
+	fi
+}
+
+function remove_section_from_bashrc() {
+	local FILE="$HOME/.bashrc"
+	local START="# pnpm" END="# pnpm end"
+	if grep -q "$START" "$FILE"; then
+		sed -i "/$START/,/$END/d" "$FILE"
+		msg "Removed pnpm section from $FILE"
+	fi
+}
+
+function create_nodejs_profile() {
+	msg "Creating profile..."
+	{
+		echo "### Generated file, DO NOT MODIFY"
+		printf 'export npm_config_registry=%q\n' "$npm_config_registry"
+		printf 'declare -xr PNPM_HOME=%q\n' "$PNPM_HOME"
+		cat <<-'DATA'
+			if ! echo ":$PATH:" | grep -q ":$PNPM_HOME:" ; then
+				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$PNPM_HOME"
+			fi
+		DATA
+		echo
+	} >/etc/profile.d/nodejs.sh
+	msg "Loading profile..."
+	source /etc/profile.d/nodejs.sh
+}
+
+function install_latest_nodejs() {
+	local PNPM_ETC="${PNPM_HOME}/etc"
+	local PNPM_RC="${PNPM_ETC}/rc"
+
+	if [[ -L ~/.config/pnpm ]] && [[ $(readlink ~/.config/pnpm) != "${PNPM_ETC}" ]]; then
+		ln -s ~/.config/pnpm "${PNPM_RC}"
+	elif [[ -e ~/.config/pnpm ]]; then
+		if [[ ! -e ${PNPM_ETC} ]]; then
+			mv ~/.config/pnpm "${PNPM_ETC}"
+			ln -s ~/.config/pnpm "${PNPM_RC}"
+		else
+			die "$HOME/.config/pnpm folder is exists, need remove it."
+		fi
+	fi
+
+	mkdir -p "${PNPM_ETC}"
+
+	mkdir -p "${PNPM_HOME}/nodejs"
+	"${PNPM_BIN}" env use --global latest
 }
 
 function replace_line() {
@@ -94,264 +228,37 @@ $RESULT
 	fi
 }
 
-function rebuild_global_packages() {
-	local ITEMS=()
-	local i
-	local j
-	cd "$1"
-	for i in */; do
-		i=${i%/}
-		if echo "$i" | grep -qE '^@' &>/dev/null; then
-			for j in "$i"/*/; do
-				j=${j%/}
-				if [ ! -L "$j" ]; then
-					ITEMS+=("$j")
-				fi
-			done
-		elif [ ! -L "$i" ]; then
-			ITEMS+=("$i")
-		fi
-	done
-
-	$NPM rebuild "${ITEMS[@]}" || {
-		msg -e "\e[38;5;11mGlobal packages not rebuilt. This may or may not cause error.\e[0m"
-		msg "    the command is: $NPM rebuild ${ITEMS[*]}"
-	}
-}
-
-function install_nodejs() {
-	msg "fetch version '$INSTALL_VERSION': "
-	if [[ $INSTALL_VERSION == "latest" ]]; then
-		download_file "https://nodejs.org/dist/latest/" "${TMP_VERSION}"
-	elif [[ $INSTALL_VERSION -gt 0 ]]; then
-		download_file "https://nodejs.org/dist/" "${TMP_INDEX}"
-
-		LATEST_SUB_VERSION=$(grep -Eo ">v${INSTALL_VERSION}\.[0-9]+\.[0-9]+/<" "${TMP_INDEX}" | grep -Eo "v${INSTALL_VERSION}\.[0-9]+\.[0-9]+" | sort --version-sort | tail -n1) \
-			|| die "not found version $INSTALL_VERSION. (file has saved at '$TMP_INDEX')"
-		msg "latest version of v$INSTALL_VERSION is $LATEST_SUB_VERSION"
-		download_file "https://nodejs.org/dist/$LATEST_SUB_VERSION/" "${TMP_VERSION}"
-		INSTALL_VERSION="$LATEST_SUB_VERSION"
-	else
-		die "requested install version ($INSTALL_VERSION) is not valid."
-	fi
-	msg " -> ok."
-
-	if check_system darwin; then
-		PACKAGE_TAG="darwin"
-	elif check_system cygwin; then
-		PACKAGE_TAG="win"
-	elif check_system linux; then
-		PACKAGE_TAG="linux"
-	else
-		die "only support: Darwin(Mac OS), Cygwin, Linux (RHEL & WSL)\n  * windows use install.ps1"
-	fi
-	msg " * system name: ${PACKAGE_TAG}"
-
-	VERSION_REGEX="href=\".*node-v[0-9.]+-${PACKAGE_TAG}-x64\\.tar\\.xz\""
-	NODE_PACKAGE=$(grep -Eo "${VERSION_REGEX}" "$TMP_VERSION" | sed 's/^href="//; s/"$//') \
-		|| die "failed to detect nodejs version from downloaded html. (file has saved at '$TMP_VERSION')"
-	msg " * package name: ${NODE_PACKAGE}"
-
-	if [[ -e $BIN ]]; then
-		msg "old nodejs exists."
-		if echo "${NODE_PACKAGE}" | grep -q "$($BIN -v)"; then
-			rm "$TMP_VERSION" || true
-			msg "official node.js not updated:"
-			msg "    current version: $($BIN -v)"
-			if [[ ${FORCE+found} != found ]] || [[ ${FORCE} != yes ]]; then
-				msg "set environment 'FORCE=yes' to reinstall"
-				return
-			fi
-			msg "    FORCE UPDATE!"
-		else
-			msg "official node.js updated:"
-			msg "    current version: $($BIN -v)"
-		fi
-	fi
-
-	msg "Installing NodeJS..."
-
-	DOWNLOAD_URL="${NODE_PACKAGE}"
-	if [[ "${NODE_PACKAGE}" == /*  ]] ; then
-		DOWNLOAD_URL="https://nodejs.org${NODE_PACKAGE}"
-	else
-		DOWNLOAD_URL="https://nodejs.org/dist/$INSTALL_VERSION/${NODE_PACKAGE}"
-	fi
-
-	NODEJS_ZIP_FILE=$(download_file "${DOWNLOAD_URL}")
-
-	msg "    extracting file:"
-	tar xf "$NODEJS_ZIP_FILE" --strip-components=1 -C "$PREFIX" || die "     -> \e[38;5;9mfailed\e[0m."
-	msg "     -> ok."
-
-	if [[ -e $BIN ]]; then
-		V=$($BIN -v 2>&1) || die "emmmmmm... binary file '$BIN' is not executable. that's weird."
-		msg "  * node.js: $V"
-	else
-		die "error... something wrong... no '$BIN' after extract."
-	fi
-}
-
-function create_nodejs_profile() {
-	msg "Creating profile..."
-	{
-		echo "### Generated file, DO NOT MODIFY"
-		echo "_NODE_JS_INSTALL_PREFIX='$PREFIX'"
-		cat <<-'DATA'
-			if ! echo ":$PATH:" | grep -q "$_NODE_JS_INSTALL_PREFIX/bin" ; then
-				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$_NODE_JS_INSTALL_PREFIX/bin"
-			fi
-			unset _NODE_JS_INSTALL_PREFIX
-		DATA
-		echo
-	} >/etc/profile.d/nodejs.sh
-	msg "Loading profile..."
-	source /etc/profile.d/nodejs.sh
-}
-
-function timing_registry() {
-	local REG="$1"
-	local http_proxy='' https_proxy='' all_proxy='' HTTP_PROXY='' HTTPS_PROXY='' ALL_PROXY=''
-	local ts tt
-
-	nslookup "$REG" &>/dev/null
-
-	ts=$(date +%s%N)
-	curl "https://$REG/" &>/dev/null || true
-	curl "https://$REG/debug/package.json" &>/dev/null || true
-	tt=$(($(date +%s%N) - ts))
-
-	echo "Timing: [$tt] $REG" >&2
-	echo "$tt"
-}
-
 function update_config() {
-	mkdir -p "$PREFIX/etc" || true
-	[[ -e "$PREFIX/etc/yarnrc" ]] || touch "$PREFIX/etc/yarnrc" || true
-	[[ -e "$PREFIX/etc/npmrc" ]] || touch "$PREFIX/etc/npmrc" || true
+	npm config --location=global set \
+		"access=public" \
+		"fetch-retries=1000" \
+		"registry=$npm_config_registry"
 
-	replace_line "$PREFIX/etc/yarnrc" 'global-folder' 'global-folder "/usr/nodejs/lib"'
-	replace_line "$PREFIX/etc/npmrc" 'prefix' "prefix=$PREFIX"
-	replace_line "$PREFIX/etc/npmrc" 'access' "access=public"
-	replace_line "$PREFIX/etc/npmrc" 'fetch-retries' 'fetch-retries=1000'
+	pnpm config --location=global set "global-dir" "${PNPM_HOME}/lib/pnpm-global"
+	pnpm config --location=global set 'network-concurrency' '3'
+	pnpm config --location=global set 'always-auth' 'false'
+	pnpm config --location=global set "global-bin-dir" "${PNPM_HOME}"
 
-	replace_line "$HOME/.config/pnpm/rc" 'global-dir' "global-dir=$PREFIX/lib/pnpm-global"
-	replace_line "$HOME/.config/pnpm/rc" 'network-concurrency' 'network-concurrency=3'
-	replace_line "$HOME/.config/pnpm/rc" 'always-auth' 'always-auth=false'
-	replace_line "$HOME/.config/pnpm/rc" 'global-bin-dir' "global-bin-dir=$PREFIX/bin"
-
-	set_registry
-	set_cache_path
-}
-
-function set_registry() {
-	export npm_config_registry='https://registry.npmjs.org'
-	if ! grep -qE '\bregistry\s*=' "$PREFIX/etc/npmrc"; then
-		CHINA=$(timing_registry registry.npmmirror.com)
-		ORIGINAL=$(timing_registry registry.npmjs.org)
-
-		if [[ $CHINA -le $ORIGINAL ]]; then
-			echo "Using TaoBao npm mirror: npmmirror.com"
-			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmmirror.com"
-			export npm_config_registry='https://registry.npmmirror.com'
-		else
-			replace_line "$PREFIX/etc/npmrc" 'registry' "registry=https://registry.npmjs.org"
-		fi
-		replace_line "$PREFIX/etc/npmrc" 'noproxy' "noproxy=registry.npmmirror.com,cdn.npmmirror.com,npmmirror.com"
-	else
-		reg=$(grep -E '^registry\s*=' "$PREFIX/etc/npmrc" | tr '=' ' ' | awk '{print $2}')
-		if [[ $reg == http* ]]; then
-			echo "Using Config npm registry: $reg"
-			export npm_config_registry="${reg%/}"
-
-		fi
-	fi
-}
-
-function set_cache_path() {
 	if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
 		echo "Reset cache folder(s) to $SYSTEM_COMMON_CACHE"
-		replace_line "$PREFIX/etc/npmrc" 'cache' "cache=$SYSTEM_COMMON_CACHE/npm"
-		replace_line "$PREFIX/etc/yarnrc" 'cache-folder' "cache-folder \"$SYSTEM_COMMON_CACHE/yarn\""
+		npm config --location=global set "cache=$SYSTEM_COMMON_CACHE/npm"
+		# replace_line "$PREFIX/etc/yarnrc" 'cache-folder' "cache-folder \"$SYSTEM_COMMON_CACHE/yarn\""
 
 		echo "export JSPM_GLOBAL_PATH='$SYSTEM_COMMON_CACHE/jspm'" >>/etc/profile.d/nodejs.sh
 	fi
 }
 
-### curl https://get.pnpm.io/install.sh
-
-_fetch() {
-	curl -fsSL "$1"
-}
-
-download_using_pnpm() {
-	local http_proxy='' https_proxy='' all_proxy='' HTTP_PROXY='' HTTPS_PROXY='' ALL_PROXY=''
-	msg "  metadata: $npm_config_registry/pnpm"
-	version_json="$(_fetch "$npm_config_registry/pnpm")" || die "Download Error!"
-	version="$(printf '%s' "${version_json}" | jq -r '."dist-tags".latest')"
-	msg "  version: $version"
-
-	archive_url="$(printf '%s' "${version_json}" | jq --arg version "$version" -r '.versions[$version].dist.tarball')"
-	msg "  tarball: $archive_url"
-
-	curl -fL "$archive_url" >"pnpm.tgz.download"
-	mv "pnpm.tgz.download" "pnpm.tgz"
-	tar xf "pnpm.tgz"
-
-	"$BIN" ./package/bin/pnpm.cjs -g add pnpm@latest npm@latest yarn@latest || die "failed execute temp file"
-}
-
-function install_package_managers() {
-	TMPD=$(mktemp -d)
-	pushd "$TMPD" >/dev/null || die "temp dir not found!"
-	msg "Installing package managers..."
-
-	rm -rf "$PREFIX/bin/npm" "$PREFIX/bin/npx" "$PREFIX/lib/node_modules"
-	download_using_pnpm
-
-	echo -n "    - pnpm: "
-	"$PNPM" --version
-	echo -n "    - npm: "
-	"$NPM" --version
-	echo -n "    - yarn: "
-	"$YARN" --version
-
-	popd >/dev/null || die "???"
-	rm -rf "$TMPD"
-}
-
 function install_other_packages() {
 	msg "Installing other package managers..."
-	"$PNPM" -g add unipm @microsoft/rush
+	"${PNPM_BIN}" -g add unipm @microsoft/rush
 }
 
-if command_exists id && [[ "$(id -u)" -ne 0 ]]; then
-	msg "not privileged user."
-	if command_exists sudo; then
-		msg "re-invoke with sudo... (will fail if password is required from commandline)"
-		exec sudo bash
-	fi
-fi
+set_registry
+install_pnpm
 
-mkdir -p "$PREFIX" || die "Can not create directory at '$PREFIX'"
-
-if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
-	declare -r DOWNLOAD="${SYSTEM_COMMON_CACHE}/Download"
-	msg "download dir is $DOWNLOAD"
-else
-	declare -r DOWNLOAD="${TMPDIR-"/tmp"}"
-	msg "temp download dir is $DOWNLOAD"
-fi
-(
-	mkdir -p "$DOWNLOAD"
-	cd "$DOWNLOAD"
-	touch .test && rm .test
-) || die "System temp direcotry '$DOWNLOAD' is not writable."
-
-do_system_check
-install_nodejs
+remove_section_from_bashrc
 create_nodejs_profile
-update_config
 
-install_package_managers
+install_latest_nodejs
+update_config
 install_other_packages
