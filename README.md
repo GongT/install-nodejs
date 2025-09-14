@@ -1,7 +1,6 @@
 # install node.js
-Install nodejs into `/usr/nodejs`
-* also install `yarn` & `pnpm`
-* auto configure yarn & npm to use `/usr/nodejs`, prevent them using `/usr/local/bin`
+Install pnpm (and nodejs) into `/usr/local/share/pnpm`
+* auto configure npm to use `/usr/local/share/pnpm`, prevent it using `/usr/local/bin`
 * create & append required environment variables
 * rebuild global dependencies
 

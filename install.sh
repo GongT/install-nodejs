@@ -177,10 +177,10 @@ function create_nodejs_profile() {
 	{
 		echo "### Generated file, DO NOT MODIFY"
 		printf 'export npm_config_registry=%q\n' "$npm_config_registry"
-		printf 'declare -xr PNPM_HOME=%q\n' "$PNPM_HOME"
+		printf 'export PNPM_HOME=%q\n' "$PNPM_HOME"
 		cat <<-'DATA'
-			if ! echo ":$PATH:" | grep -q ":$PNPM_HOME:" ; then
-				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$PNPM_HOME"
+			if ! echo ":$PATH:" | grep -q ":$PNPM_HOME/bin:" ; then
+				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$PNPM_HOME:$PNPM_HOME/bin:$PNPM_HOME/nodejs_current/bin/"
 			fi
 		DATA
 		echo
@@ -191,17 +191,21 @@ function create_nodejs_profile() {
 
 function install_latest_nodejs() {
 	local PNPM_ETC="${PNPM_HOME}/etc"
-	local PNPM_RC="${PNPM_ETC}/rc"
 
-	if [[ -L ~/.config/pnpm ]] && [[ $(readlink ~/.config/pnpm) != "${PNPM_ETC}" ]]; then
-		ln -s ~/.config/pnpm "${PNPM_RC}"
+	if [[ -L ~/.config/pnpm ]]; then
+		if [[ $(readlink ~/.config/pnpm) != "${PNPM_ETC}" ]]; then
+			unlink ~/.config/pnpm
+		fi
 	elif [[ -e ~/.config/pnpm ]]; then
 		if [[ ! -e ${PNPM_ETC} ]]; then
 			mv ~/.config/pnpm "${PNPM_ETC}"
-			ln -s ~/.config/pnpm "${PNPM_RC}"
 		else
 			die "$HOME/.config/pnpm folder is exists, need remove it."
 		fi
+	fi
+
+	if ! [[ -e ~/.config/pnpm ]]; then
+		ln -s -T "${PNPM_ETC}" ~/.config/pnpm
 	fi
 
 	mkdir -p "${PNPM_ETC}"
@@ -237,7 +241,7 @@ function update_config() {
 	pnpm config --location=global set "global-dir" "${PNPM_HOME}/lib/pnpm-global"
 	pnpm config --location=global set 'network-concurrency' '3'
 	pnpm config --location=global set 'always-auth' 'false'
-	pnpm config --location=global set "global-bin-dir" "${PNPM_HOME}"
+	pnpm config --location=global set "global-bin-dir" "${PNPM_HOME}/bin"
 
 	if [[ ${SYSTEM_COMMON_CACHE+found} == found ]]; then
 		echo "Reset cache folder(s) to $SYSTEM_COMMON_CACHE"
