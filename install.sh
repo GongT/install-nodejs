@@ -180,7 +180,7 @@ function create_nodejs_profile() {
 		printf 'export PNPM_HOME=%q\n' "$PNPM_HOME"
 		cat <<-'DATA'
 			if ! echo ":$PATH:" | grep -q ":$PNPM_HOME/bin:" ; then
-				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$PNPM_HOME:$PNPM_HOME/bin:$PNPM_HOME/nodejs_current/bin/"
+				export PATH="$PATH:./node_modules/.bin:./common/temp/bin:$PNPM_HOME:$PNPM_HOME/bin"
 			fi
 		DATA
 		echo
